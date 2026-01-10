@@ -1,4 +1,4 @@
-name: Build Android v8a with My Own Key
+name: Build Android v8a (Final Success)
 
 on:
   workflow_dispatch: 
@@ -22,30 +22,34 @@ jobs:
           flutter-version: "3.38.x"
           cache: true
 
-      # --- 关键步骤：创建你自己的签名 ---
-      - name: Create My Own Keystore
+      - name: Create Signature & Upgrade Pub
         run: |
-          cd simple_live_app/android
-          # 1. 使用 Java 自带工具生成一个 key 文件
-          # 密码统一设为 123456，别名设为 mykey
-          keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mykey -storepass 123456 -keypass 123456 -dname "CN=MyName, OU=Dev, O=MyOrg, L=City, S=State, C=CH"
+          # 1. 进入项目目录
+          cd simple_live_app
           
-          # 2. 创建作者脚本需要的 key.properties 文件，并填入你刚才设定的密码
+          # 2. 生成自己的密钥文件 (解决签名 null 报错)
+          cd android
+          keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mykey -storepass 123456 -keypass 123456 -dname "CN=User, OU=Dev, O=Home, L=City, S=State, C=CH"
           echo "storeFile=../my-release-key.jks" > key.properties
           echo "storePassword=123456" >> key.properties
           echo "keyPassword=123456" >> key.properties
           echo "keyAlias=mykey" >> key.properties
-          echo "Successfully created your own signature!"
-
-      - name: Build APK
+          
+          # 3. 强制升级过时的依赖包 (解决 outdated 提示)
+          cd ..
+          flutter pub upgrade --major-versions
+          
+      - name: Build APK v8a
         run: |
           cd simple_live_app
+          # 清理旧缓存并重新获取
+          flutter clean
           flutter pub get
-          # 此时编译 release，它会读取我们刚创建的 key.properties，不会再报 null 错误
+          # 强制指定 arm64 架构编译
           flutter build apk --release --target-platform android-arm64
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-Custom-Signed
-          path: simple_live_app/build/app/outputs/flutter-apk/*.apk
+          name: SimpleLive-v8a-Final
+          path: simple_live_app/build/app/outputs/flutter-apk/app-release.apk
