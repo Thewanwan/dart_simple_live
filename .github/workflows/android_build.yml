@@ -22,17 +22,18 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        # 如果 pubspec.yaml 在根目录，就不用改；
-        # 如果在子文件夹，把下面的 ./ 改成你的文件夹名，例如 ./app
+        # 注意：这里增加了 working-directory，指向 app 目录
         run: flutter pub get
-        working-directory: ./ 
+        working-directory: app
 
       - name: Build APK
+        # 注意：这里也指向了 app 目录
         run: flutter build apk --release
-        working-directory: ./ 
+        working-directory: app
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: live-app-release
-          path: "**/build/app/outputs/flutter-apk/app-release.apk" # 使用通配符自动查找
+          # 路径也需要对应调整
+          path: app/build/app/outputs/flutter-apk/app-release.apk
