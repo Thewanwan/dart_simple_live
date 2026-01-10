@@ -22,18 +22,18 @@ jobs:
           cache: true
 
       - name: Install dependencies
-        # 注意：这里增加了 working-directory，指向 app 目录
+        # 指向正确的子目录：projects/app
         run: flutter pub get
-        working-directory: app
+        working-directory: projects/app
 
       - name: Build APK
-        # 注意：这里也指向了 app 目录
+        # 指向正确的子目录：projects/app
         run: flutter build apk --release
-        working-directory: app
+        working-directory: projects/app
         
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: live-app-release
-          # 路径也需要对应调整
-          path: app/build/app/outputs/flutter-apk/app-release.apk
+          # 查找 projects/app 下生成的 apk
+          path: projects/app/build/app/outputs/flutter-apk/app-release.apk
