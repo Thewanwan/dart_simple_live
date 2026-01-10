@@ -1,39 +1,46 @@
-name: Android CI
+name: Build Android v8a APK
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch: # 手动触发编译
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # 1. 签出代码
       - uses: actions/checkout@v4
 
-      - name: set up JDK 17
+      # 2. 设置 Java 环境 (作者使用的是 Java 17)
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          distribution: "zulu"
+          java-version: "17"
+          cache: "gradle"
 
-      - name: Set up Flutter
+      # 3. 设置 Flutter 环境 (使用作者指定的 3.38.x)
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: 'stable'
+          flutter-version: "3.38.x"
           cache: true
 
+      # 4. 获取依赖 (关键路径：simple_live_app)
       - name: Install dependencies
-        # 指向正确的子目录：projects/app
-        run: flutter pub get
-        working-directory: projects/app
+        run: |
+          cd simple_live_app
+          flutter pub get
 
-      - name: Build APK
-        # 指向正确的子目录：projects/app
-        run: flutter build apk --release
-        working-directory: projects/app
-        
-      - name: Upload APK
+      # 5. 编译 v8a 架构的 APK
+      # --split-per-abi 会生成多个架构的包，我们只上传 v8a
+      - name: Build v8a APK
+        run: |
+          cd simple_live_app
+          flutter build apk --release --target-platform android-arm64 --split-per-abi
+
+      # 6. 上传生成的 v8a APK
+      - name: Upload v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: live-app-release
-          # 查找 projects/app 下生成的 apk
-          path: projects/app/build/app/outputs/flutter-apk/app-release.apk
+          name: SimpleLive-v8a-Only
+          path: simple_live_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
