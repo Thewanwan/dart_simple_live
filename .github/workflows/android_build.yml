@@ -1,55 +1,48 @@
-name: Build Android v8a (Final Success)
+name: Build Windows x64
 
 on:
   workflow_dispatch: 
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-windows:
+    # 必须在 Windows 环境下运行才能编译 .exe
+    runs-on: windows-latest
+
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: "zulu"
-          java-version: "17"
-          cache: "gradle"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          # 使用作者指定的 3.38.x 版本确保兼容性
           flutter-version: "3.38.x"
           cache: true
 
-      - name: Create Signature & Upgrade Pub
-        run: |
-          # 1. 进入项目目录
-          cd simple_live_app
-          
-          # 2. 生成自己的密钥文件 (解决签名 null 报错)
-          cd android
-          keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mykey -storepass 123456 -keypass 123456 -dname "CN=User, OU=Dev, O=Home, L=City, S=State, C=CH"
-          echo "storeFile=../my-release-key.jks" > key.properties
-          echo "storePassword=123456" >> key.properties
-          echo "keyPassword=123456" >> key.properties
-          echo "keyAlias=mykey" >> key.properties
-          
-          # 3. 强制升级过时的依赖包 (解决 outdated 提示)
-          cd ..
-          flutter pub upgrade --major-versions
-          
-      - name: Build APK v8a
-        run: |
-          cd simple_live_app
-          # 清理旧缓存并重新获取
-          flutter clean
-          flutter pub get
-          # 强制指定 arm64 架构编译
-          flutter build apk --release --target-platform android-arm64
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
 
-      - name: Upload APK
+      - name: Get Dependencies
+        run: |
+          cd simple_live_app
+          flutter pub get
+
+      - name: Build Windows
+        run: |
+          cd simple_live_app
+          # 编译 release 版本的 windows 程序
+          flutter build windows --release
+
+      - name: Package Windows Build
+        shell: pwsh
+        run: |
+          # 进入编译出的文件夹：build/windows/runner/Release
+          # 我们将其打包成一个 zip，方便下载后直接运行
+          cd simple_live_app/build/windows/runner/
+          Compress-Archive -Path Release/* -DestinationPath ../../../simple_live_win_x64.zip
+
+      - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-v8a-Final
-          path: simple_live_app/build/app/outputs/flutter-apk/app-release.apk
+          # 产物名字按你要求的叫 simple_live_win_x64
+          name: simple_live_win_x64
+          path: simple_live_win_x64.zip
