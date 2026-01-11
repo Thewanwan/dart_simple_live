@@ -1,48 +1,37 @@
-name: Build Windows x64
-
-on:
-  workflow_dispatch: 
-
-jobs:
-  build-windows:
-    # 必须在 Windows 环境下运行才能编译 .exe
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          # 使用作者指定的 3.38.x 版本确保兼容性
-          flutter-version: "3.38.x"
-          cache: true
-
-      - name: Enable Windows Desktop
-        run: flutter config --enable-windows-desktop
-
-      - name: Get Dependencies
-        run: |
-          cd simple_live_app
-          flutter pub get
-
-      - name: Build Windows
-        run: |
-          cd simple_live_app
-          # 编译 release 版本的 windows 程序
-          flutter build windows --release
-
-      - name: Package Windows Build
+- name: Locate and Package Windows Build
         shell: pwsh
         run: |
-          # 进入编译出的文件夹：build/windows/runner/Release
-          # 我们将其打包成一个 zip，方便下载后直接运行
-          cd simple_live_app/build/windows/runner/
-          Compress-Archive -Path Release/* -DestinationPath ../../../simple_live_win_x64.zip
+          # 1. 打印目录树，这样如果报错，我们一眼就能看到文件夹在哪
+          Write-Host "Searching for build output..."
+          Get-ChildItem -Path . -Recurse -Directory -Filter "Release" | Select-Object FullName
+          
+          # 2. 尝试几种常见的 Flutter Windows 输出路径
+          $possiblePaths = @(
+              "simple_live_app\build\windows\x64\runner\Release",
+              "simple_live_app\build\windows\runner\Release",
+              "build\windows\x64\runner\Release"
+          )
+
+          $foundPath = $null
+          foreach ($path in $possiblePaths) {
+              if (Test-Path $path) {
+                  $foundPath = $path
+                  break
+              }
+          }
+
+          # 3. 如果找到了就打包，找不到就报出所有文件结构供参考
+          if ($foundPath) {
+              Write-Host "Success! Found build at: $foundPath"
+              Compress-Archive -Path "$foundPath\*" -DestinationPath "simple_live_win_x64.zip"
+          } else {
+              Write-Host "Could not find standard paths. Listing all files for debugging:"
+              dir -Recurse
+              exit 1
+          }
 
       - name: Upload Windows Artifact
         uses: actions/upload-artifact@v4
         with:
-          # 产物名字按你要求的叫 simple_live_win_x64
           name: simple_live_win_x64
           path: simple_live_win_x64.zip
