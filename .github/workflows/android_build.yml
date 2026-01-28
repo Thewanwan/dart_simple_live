@@ -1,13 +1,20 @@
-name: Build Windows x64
+name: Build Android v8a (Confirmed Version)
 
 on:
-  workflow_dispatch: 
+  workflow_dispatch: # 手动触发
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
+  build-android:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "zulu"
+          java-version: "17"
+          cache: "gradle"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -15,51 +22,25 @@ jobs:
           flutter-version: "3.38.x"
           cache: true
 
-      - name: Enable Windows Desktop
-        run: flutter config --enable-windows-desktop
+      # 使用你之前验证成功的“自建签名”逻辑，解决 null 报错
+      - name: Create My Own Keystore
+        run: |
+          cd simple_live_app/android
+          keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mykey -storepass 123456 -keypass 123456 -dname "CN=MyName, OU=Dev, O=MyOrg, L=City, S=State, C=CH"
+          echo "storeFile=../my-release-key.jks" > key.properties
+          echo "storePassword=123456" >> key.properties
+          echo "keyPassword=123456" >> key.properties
+          echo "keyAlias=mykey" >> key.properties
 
-      - name: Get Dependencies
+      - name: Build v8a APK
         run: |
           cd simple_live_app
           flutter pub get
+          # 关键指令：只打包 64 位 (arm64-v8a)
+          flutter build apk --release --target-platform android-arm64
 
-      - name: Build Windows
-        run: |
-          cd simple_live_app
-          flutter build windows --release
-
-      - name: Locate and Package Windows Build
-        shell: pwsh
-        run: |
-          Write-Host "Searching for build output..."
-          # 打印现有的 Release 目录位置
-          Get-ChildItem -Path . -Recurse -Directory -Filter "Release" | Select-Object FullName
-          
-          $possiblePaths = @(
-              "simple_live_app\build\windows\x64\runner\Release",
-              "simple_live_app\build\windows\runner\Release",
-              "build\windows\x64\runner\Release"
-          )
-
-          $foundPath = $null
-          foreach ($path in $possiblePaths) {
-              if (Test-Path $path) {
-                  $foundPath = $path
-                  break
-              }
-          }
-
-          if ($foundPath) {
-              Write-Host "Success! Found build at: $foundPath"
-              Compress-Archive -Path "$foundPath\*" -DestinationPath "simple_live_win_x64.zip"
-          } else {
-              Write-Host "Could not find standard paths. Listing directory structure:"
-              Get-ChildItem -Recurse | Select-Object FullName
-              exit 1
-          }
-
-      - name: Upload Windows Artifact
+      - name: Upload v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: simple_live_win_x64
-          path: simple_live_win_x64.zip
+          name: SimpleLive-Android-v8a
+          path: simple_live_app/build/app/outputs/flutter-apk/app-release.apk
