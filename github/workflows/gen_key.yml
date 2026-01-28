@@ -1,0 +1,14 @@
+name: Get My Secret Base64
+on: workflow_dispatch
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate and Show Base64
+        run: |
+          # 1. 生成密钥文件
+          keytool -genkey -v -keystore my.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mykey -storepass 123456 -keypass 123456 -dname "CN=User, O=App, C=CH"
+          # 2. 转换成 Base64 字符串并打印出来
+          echo "---------- COPY THE TEXT BELOW ----------"
+          base64 -w 0 my.jks
+          echo -e "\n---------- COPY THE TEXT ABOVE ----------"
