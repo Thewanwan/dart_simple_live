@@ -1,11 +1,40 @@
-- name: Locate and Package Windows Build
+name: Build Windows x64
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.x"
+          cache: true
+
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Get Dependencies
+        run: |
+          cd simple_live_app
+          flutter pub get
+
+      - name: Build Windows
+        run: |
+          cd simple_live_app
+          flutter build windows --release
+
+      - name: Locate and Package Windows Build
         shell: pwsh
         run: |
-          # 1. 打印目录树，这样如果报错，我们一眼就能看到文件夹在哪
           Write-Host "Searching for build output..."
+          # 打印现有的 Release 目录位置
           Get-ChildItem -Path . -Recurse -Directory -Filter "Release" | Select-Object FullName
           
-          # 2. 尝试几种常见的 Flutter Windows 输出路径
           $possiblePaths = @(
               "simple_live_app\build\windows\x64\runner\Release",
               "simple_live_app\build\windows\runner\Release",
@@ -20,13 +49,12 @@
               }
           }
 
-          # 3. 如果找到了就打包，找不到就报出所有文件结构供参考
           if ($foundPath) {
               Write-Host "Success! Found build at: $foundPath"
               Compress-Archive -Path "$foundPath\*" -DestinationPath "simple_live_win_x64.zip"
           } else {
-              Write-Host "Could not find standard paths. Listing all files for debugging:"
-              dir -Recurse
+              Write-Host "Could not find standard paths. Listing directory structure:"
+              Get-ChildItem -Recurse | Select-Object FullName
               exit 1
           }
 
