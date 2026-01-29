@@ -22,10 +22,10 @@ jobs:
           flutter-version: "3.38.x"
           cache: true
 
-      # 从 Secrets 还原名为“子非鱼”的固定签名，确保 vivo 手机允许覆盖安装
+      # 关键步骤：使用符合规范的 Secret 名 ZI_FEI_YU 还原签名文件
       - name: Restore Keystore from Secrets
         env:
-          MY_BASE64: ${{ secrets.子非鱼 }}
+          MY_BASE64: ${{ secrets.ZI_FEI_YU }}
         run: |
           echo "$MY_BASE64" | base64 -d > simple_live_app/android/my-release-key.jks
           cd simple_live_app/android
@@ -37,12 +37,12 @@ jobs:
       - name: Build v8a APK
         run: |
           cd simple_live_app
-          # 必须执行 clean，否则你修改的 huya_site.dart 可能不会被重新编译
+          # 必须执行 clean，确保你修改的 huya_site.dart 核心解析代码生效
           flutter clean
-          # 升级播放器依赖，缓解 Android 15 GPU 报错
+          # 升级插件依赖，针对 Android 15 的视频渲染进行潜在优化
           flutter pub upgrade
           flutter pub get
-          # 针对 vivo X100 优化，只打 arm64 架构
+          # 针对 vivo X100 优化，仅编译 arm64-v8a 架构，并禁用图标抖动以减小包体积
           flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
 
       - name: Upload v8a APK
