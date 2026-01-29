@@ -2,7 +2,7 @@ name: Daily API Check
 
 on:
   schedule:
-    - cron: '0 0 * * *' # UTC 0:00 即北京时间 08:00
+    - cron: '0 0 * * *' # 北京时间 08:00
   workflow_dispatch:
 
 jobs:
@@ -19,36 +19,27 @@ jobs:
         with:
           python-version: '3.10'
 
-      # 下载黑匣子 JSON
-      - name: Fetch API
+      # 下载黑匣子，但不提交它
+      - name: Fetch Huya JSON
         run: |
           mkdir -p scripts
           curl -L "https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=%E9%9C%B2%E9%9B%AA&v=4&typ=-5&rows=1" -o scripts/huya_api.json
 
-      # 运行大脑进行解析
-      - name: Run Brain
+      - name: Run Python Logic
         run: python scripts/check_api.py
 
-      # 关键：检查是否有代码改动
-      - name: Check for changes
-        id: git-check
+      - name: Git Check & Push
         run: |
           if [ -n "$(git status --porcelain)" ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
+            git config --global user.name "ZI-FEI-YU-BOT"
+            git config --global user.email "bot@zifeiyu.com"
+            
+            # 自动升级版本号
+            sed -i "s/version: \(.*\)+\(.*\)/echo \"version: \1+\$((\2+1))\"/e" simple_live_app/pubspec.yaml
+            
+            git add .
+            git commit -m "chore: 发现虎牙接口变动，已自动修复并升级版本"
+            git push
           else
-            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "接口无变动，今日跳过更新。"
           fi
-
-      # 如果变了，升级版本并 Push（这会触发 android_build.yml）
-      - name: Push Changes
-        if: steps.git-check.outputs.changed == 'true'
-        run: |
-          git config --global user.name "ZI-FEI-YU-BOT"
-          git config --global user.email "bot@zifeiyu.com"
-          
-          # 自动升级 pubspec.yaml 版本
-          sed -i "s/version: \(.*\)+\(.*\)/echo \"version: \1+\$((\2+1))\"/e" simple_live_app/pubspec.yaml
-          
-          git add .
-          git commit -m "chore: 自动修复虎牙接口并升级版本"
-          git push
