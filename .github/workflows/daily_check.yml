@@ -1,0 +1,41 @@
+name: Daily Huya Monitor
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # 每天北京时间早上 8 点运行
+  workflow_dispatch: # 也支持手动触发
+
+jobs:
+  check-and-update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Run Monitor Script
+        id: monitor
+        run: |
+          # 这里运行一个 Python 脚本来探测虎牙接口
+          # 如果发现接口结构变了，脚本修改文件并输出一个变量给 GitHub Actions
+          python ./scripts/check_huya_api.py
+          
+      - name: Commit and Push if changed
+        if: env.API_CHANGED == 'true'
+        run: |
+          git config --global user.name "Bot-ZiFeiYu"
+          git config --global user.email "bot@zifeiyu.com"
+          # 自动增加版本号
+          sed -i 's/version: \(.*\)+\(.*\)/echo "version: \1+$((\2+1))"/e' simple_live_app/pubspec.yaml
+          git add .
+          git commit -m "chore: 自动修复虎牙接口并升级版本 [skip ci]"
+          git push
+          
+      - name: Trigger Build
+        if: env.API_CHANGED == 'true'
+        uses: peter-evans/repository-dispatch@v2
+        with:
+          event-type: trigger-v8a-build
