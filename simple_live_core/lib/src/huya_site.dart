@@ -1,126 +1,91 @@
 import 'dart:convert';
-
 import 'package:crypto/crypto.dart';
+import 'package:simple_live_core/simple_live_core.dart';
 import 'package:simple_live_core/src/common/http_client.dart';
-import 'package:simple_live_core/src/interface/live_site.dart';
-import 'package:simple_live_core/src/model/live_anchor_item.dart';
-import 'package:simple_live_core/src/model/live_category.dart';
-import 'package:simple_live_core/src/model/live_category_result.dart';
-import 'package:simple_live_core/src/model/live_play_url.dart';
-import 'package:simple_live_core/src/model/live_room_detail.dart';
-import 'package:simple_live_core/src/model/live_room_item.dart';
-import 'package:simple_live_core/src/model/live_search_result.dart';
 
 class HuyaSite implements LiveSite {
   @override
-  String get id => 'huya';
+  String id = 'huya';
 
   @override
-  String get name => '虎牙直播';
+  String name = '虎牙直播';
 
   @override
-  Future<LiveCategoryResult> getCategoryRooms(
-    LiveSubCategory category, {
-    int page = 1,
-  }) async {
-    return LiveCategoryResult(
-      hasMore: false,
-      rooms: [],
-    );
+  LiveDanmaku getDanmaku() => LiveDanmaku();
+
+  @override
+  Future<List<LiveCategory>> getCategores() async => [];
+
+  @override
+  Future<LiveCategoryResult> getCategoryRooms(LiveSubCategory category, {int page = 1}) async {
+    return LiveCategoryResult(hasMore: false, items: []);
   }
 
   @override
-  Future<LiveSearchRoomResult> searchRooms(
-    String keyword, {
-    int page = 1,
-  }) async {
-    final url =
-        'https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=$keyword&uid=0&v=4&typ=-5&livestate=0&rows=20&start=${(page - 1) * 20}';
+  Future<LiveCategoryResult> getRecommendRooms({int page = 1}) async {
+    return LiveCategoryResult(hasMore: false, items: []);
+  }
 
+  @override
+  Future<LiveSearchRoomResult> searchRooms(String keyword, {int page = 1}) async {
+    final url = 'https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=$keyword&uid=0&v=4&typ=-5&livestate=0&rows=20&start=${(page - 1) * 20}';
     final res = await HttpClient.instance.getJson(url);
     final docs = res['response']?['1']?['docs'] ?? [];
-
-    final rooms = <LiveRoomItem>[];
+    final items = <LiveRoomItem>[];
 
     for (final item in docs) {
-      final roomId = item['room_id']?.toString();
-      if (roomId == null || roomId.isEmpty) continue;
-
-      rooms.add(
-        LiveRoomItem(
-          roomId: roomId,
-          title: item['live_intro'] ?? '',
-          cover: item['game_avatarUrl180'] ?? '',
-          userName: item['game_nick'] ?? '',
-          online: item['game_activityCount'] ?? 0,
-          siteId: id,
-        ),
-      );
+      final rId = item['room_id']?.toString() ?? "";
+      if (rId.isEmpty) continue;
+      items.add(LiveRoomItem(
+        roomId: rId,
+        title: item['live_intro'] ?? '',
+        cover: item['game_avatarUrl180'] ?? '',
+        userName: item['game_nick'] ?? '',
+        online: item['game_activityCount'] ?? 0,
+      ));
     }
-
-    return LiveSearchRoomResult(
-      hasMore: rooms.length == 20,
-      rooms: rooms,
-    );
+    return LiveSearchRoomResult(hasMore: items.length == 20, items: items);
   }
 
   @override
-  Future<LiveSearchAnchorResult> searchAnchors(
-    String keyword, {
-    int page = 1,
-  }) async {
-    return LiveSearchAnchorResult(
-      hasMore: false,
-      anchors: <LiveAnchorItem>[],
-    );
+  Future<LiveSearchAnchorResult> searchAnchors(String keyword, {int page = 1}) async {
+    return LiveSearchAnchorResult(hasMore: false, items: []);
   }
 
   @override
   Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
-    final url = 'https://www.huya.com/$roomId';
-    final text = await HttpClient.instance.getText(url);
-
-    final uidMatch =
-        RegExp(r'"uid"\s*:\s*(\d+)').firstMatch(text);
-    final uid = uidMatch?.group(1) ?? '';
-
     return LiveRoomDetail(
       roomId: roomId,
-      title: '',
-      userName: '',
+      title: '虎牙直播',
+      userName: '未知主播',
       userAvatar: '',
       online: 0,
       status: true,
-      siteId: id,
-      data: {'uid': uid},
+      cover: '',
+      url: 'https://www.huya.com/$roomId',
+      data: {},
     );
   }
 
   @override
-  Future<LivePlayUrl> getPlayUrls({
-    required String roomId,
-    String? line,
-  }) async {
-    final infoUrl =
-        'https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId';
-    final res = await HttpClient.instance.getJson(infoUrl);
-
-    final stream = res['data']?['stream']?['baseSteamInfoList']?[0];
-    final url = stream?['sFlvUrl'];
-    final streamName = stream?['sStreamName'];
-    final suffix = stream?['sFlvUrlSuffix'];
-    final antiCode = stream?['sFlvAntiCode'];
-
-    final playUrl =
-        '$url/$streamName.$suffix?$antiCode';
-
-    final sign = md5
-        .convert(utf8.encode(playUrl))
-        .toString();
-
-    return LivePlayUrl(
-      playUrl: playUrl,
-      sign: sign,
-    );
+  Future<List<LivePlayQuality>> getPlayQualites({required LiveRoomDetail detail}) async {
+    return [LivePlayQuality(quality: "原画", data: detail.roomId)];
   }
+
+  @override
+  Future<LivePlayUrl> getPlayUrls({required LiveRoomDetail detail, required LivePlayQuality quality}) async {
+    final roomId = quality.data as String;
+    final infoUrl = 'https://mp.huya.com/cache.php?m=Live&do=profileRoom&roomid=$roomId';
+    final res = await HttpClient.instance.getJson(infoUrl);
+    final stream = res['data']?['stream']?['baseSteamInfoList']?[0];
+    final playUrl = '${stream?['sFlvUrl']}/${stream?['sStreamName']}.${stream?['sFlvUrlSuffix']}?${stream?['sFlvAntiCode']}';
+
+    return LivePlayUrl(urls: [playUrl]);
+  }
+
+  @override
+  Future<bool> getLiveStatus({required String roomId}) async => true;
+
+  @override
+  Future<List<LiveSuperChatMessage>> getSuperChatMessage({required String roomId}) async => [];
 }
