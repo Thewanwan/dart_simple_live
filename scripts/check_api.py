@@ -10,7 +10,14 @@ def main():
         data = json.load(f)
     
     response = data.get('response', {})
-    docs = response.get('1', {}).get('docs', []) or response.get('3', {}).get('docs', [])
+    # 自动识别含有 docs 且含有 game_screenshot 的节点
+    docs = []
+    for node in ["3", "1", "1027"]:
+        temp_docs = response.get(node, {}).get('docs', [])
+        if temp_docs and 'game_screenshot' in temp_docs[0]:
+            docs = temp_docs
+            break
+    
     if not docs: return
     sample = docs[0]
     
