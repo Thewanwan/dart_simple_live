@@ -1,0 +1,48 @@
+name: Build iPadOS IPA
+
+on:
+  workflow_dispatch: 
+
+jobs:
+  build-ios:
+    # 必须使用 macOS 环境，否则无法编译 iOS/iPadOS
+    runs-on: macos-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.38.x"
+          cache: true
+
+      - name: Get Dependencies
+        run: |
+          cd simple_live_app
+          flutter pub get
+
+      - name: Build iOS (No Codesign)
+        run: |
+          cd simple_live_app
+          # 编译 iOS 产物，不进行签名（因为我们要用爱思助手签）
+          flutter build ios --release --no-codesign
+
+      - name: Create IPA Structure
+        run: |
+          cd simple_live_app
+          # 创建爱思助手识别的 Payload 结构
+          mkdir -p build/ios/iphoneos/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/Runner.app
+          cd build/ios/iphoneos/
+          # 打包成 .ipa 格式
+          zip -qr simple_live_ipad.ipa Payload
+          echo "IPA packaging complete."
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          # 下载时的名字叫 simple_live_ipad
+          name: simple_live_ipad
+          path: simple_live_app/build/ios/iphoneos/simple_live_ipad.ipa
+
