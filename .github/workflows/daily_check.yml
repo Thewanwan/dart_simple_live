@@ -1,41 +1,60 @@
-name: Daily Huya Monitor
+name: Daily API json Check and Auto Update
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 每天北京时间早上 8 点运行
-  workflow_dispatch: # 也支持手动触发
+    - cron: '0 0 * * *' # 每天北京时间早上 8 点运行一次
+  workflow_dispatch: # 支持手动点击运行，方便测试
 
 jobs:
   check-and-update:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }} # 必须使用 token 才能有权限推送代码
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: '3.10'
 
-      - name: Run Monitor Script
-        id: monitor
+      - name: Install dependencies
+        run: pip install requests
+
+      # 1. 运行你的探测脚本，如果有变动，脚本会直接修改本地文件
+      - name: Run API Check Script
+        run: python scripts/check_api.py
+
+      # 2. 检查代码是否有变动
+      - name: Check for changes
+        id: git-check
         run: |
-          # 这里运行一个 Python 脚本来探测虎牙接口
-          # 如果发现接口结构变了，脚本修改文件并输出一个变量给 GitHub Actions
-          python ./scripts/check_huya_api.py
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+
+      # 3. 如果代码变了，自动增加版本号并推送到仓库
+      - name: Auto Increment Version and Commit
+        if: steps.git-check.outputs.changed == 'true'
+        run: |
+          git config --global user.name "API-Bot"
+          git config --global user.email "bot@github.com"
           
-      - name: Commit and Push if changed
-        if: env.API_CHANGED == 'true'
-        run: |
-          git config --global user.name "Bot-ZiFeiYu"
-          git config --global user.email "bot@zifeiyu.com"
-          # 自动增加版本号
-          sed -i 's/version: \(.*\)+\(.*\)/echo "version: \1+$((\2+1))"/e' simple_live_app/pubspec.yaml
+          # 自动递增 pubspec.yaml 中的构建号 (+ 后面的数字)
+          # 例如 1.11.5+11105 变成 1.11.5+11106
+          sed -i "s/version: \(.*\)+\(.*\)/echo \"version: \1+\$((\2+1))\"/e" simple_live_app/pubspec.yaml
+          
           git add .
-          git commit -m "chore: 自动修复虎牙接口并升级版本 [skip ci]"
+          git commit -m "chore: 发现虎牙接口变动，已自动修复并升级版本 [skip ci]"
           git push
-          
-      - name: Trigger Build
-        if: env.API_CHANGED == 'true'
+
+      # 4. 触发打包任务 (Build Android v8a)
+      - name: Trigger Build Workflow
+        if: steps.git-check.outputs.changed == 'true'
         uses: peter-evans/repository-dispatch@v2
         with:
+          token: ${{ secrets.GITHUB_TOKEN }}
           event-type: trigger-v8a-build
