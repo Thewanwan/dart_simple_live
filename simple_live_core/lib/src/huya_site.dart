@@ -19,14 +19,14 @@ class HuyaSite implements LiveSite {
   static const String HYSDK_UA =
       "HYSDK(Windows, 30000002)_APP(pc_exe&7060000&official)_SDK(trans&2.32.3.5646)";
 
-  static Map<String, String> requestHeaders =  {
-      'Origin': baseUrl,
-      'Referer': baseUrl,
-      'User-Agent': HYSDK_UA,
+  static Map<String, String> requestHeaders = {
+    'Origin': baseUrl,
+    'Referer': baseUrl,
+    'User-Agent': HYSDK_UA,
   };
 
   final BaseTarsHttp tupClient =
-  BaseTarsHttp("http://wup.huya.com", "liveui", headers: requestHeaders);
+      BaseTarsHttp("http://wup.huya.com", "liveui", headers: requestHeaders);
 
   String? playUserAgent;
   @override
@@ -140,42 +140,8 @@ class HuyaSite implements LiveSite {
         HuyaBitRateModel(name: "高清", bitRate: 2000),
       ];
     }
-    // if (urlData.lines.isEmpty) {
-    //   urlData.lines = [
-    //     HuyaLineModel(line: "tx.flv.huya.com", lineType: HuyaLineType.flv,),
-    //     HuyaLineModel(line: "bd.flv.huya.com", lineType: HuyaLineType.flv),
-    //     HuyaLineModel(line: "al.flv.huya.com", lineType: HuyaLineType.flv),
-    //     HuyaLineModel(line: "hw.flv.huya.com", lineType: HuyaLineType.flv),
-    //   ];
-    // }
-    //var url = getRealUrl(urlData.url);
 
     for (var item in urlData.bitRates) {
-      // var urls = <String>[];
-      // for (var line in urlData.lines) {
-      //   var src = line.line;
-      //   src += "/${line.streamName}";
-      //   if (line.lineType == HuyaLineType.flv) {
-      //     //src = src.replaceAll(".m3u8", ".flv");
-      //     src += ".flv";
-      //   }
-      //   if (line.lineType == HuyaLineType.hls) {
-      //     src += ".m3u8";
-      //   }
-      //   var parms = processAnticode(
-      //     line.lineType == HuyaLineType.flv
-      //         ? line.flvAntiCode
-      //         : line.hlsAntiCode,
-      //     urlData.uid,
-      //     line.streamName,
-      //   );
-      //   src += "?$parms";
-      //   if (item.bitRate > 0) {
-      //     src += "&ratio=${item.bitRate}";
-      //   }
-      //   urls.add(src);
-      // }
-
       qualities.add(LivePlayQuality(
         data: {
           "urls": urlData.lines,
@@ -188,7 +154,6 @@ class HuyaSite implements LiveSite {
     return Future.value(qualities);
   }
 
-  // 每次访问播放虎牙都需要获取一次，不太合理，倾向于在客户端获取保存替换
   Future<String> getHuYaUA() async {
     if (playUserAgent != null) {
       return playUserAgent!;
@@ -217,8 +182,6 @@ class HuyaSite implements LiveSite {
       var url = await getPlayUrl(line, quality.data["bitRate"]);
       ls.add(url);
     }
-    // 最新UA需要额外验证，此方法暂时弃用
-    // var ua = await getHuYaUA();
     return LivePlayUrl(
       urls: ls,
       headers: {"user-agent": HYSDK_UA},
@@ -235,10 +198,6 @@ class HuyaSite implements LiveSite {
     return url;
   }
 
-  // 构造 anticode, python转写
-  /// [stream] streamname [presenterUid] 用户id [antiCode] 页面anti
-  ///
-  /// return ture anticode
   String buildAntiCode(String stream, int presenterUid, String antiCode) {
     var mapAnti = Uri(query: antiCode).queryParametersAll;
     if (!mapAnti.containsKey("fm")) {
@@ -296,7 +255,6 @@ class HuyaSite implements LiveSite {
     return antiCodeRes.entries.map((e) => '${e.key}=${e.value}').join('&');
   }
 
-  /// return sFlvToken
   Future<String> getCndTokenInfoEx(String stream) async {
     var func = "getCdnTokenInfoEx";
     var tid = HuyaUserId();
@@ -347,8 +305,15 @@ class HuyaSite implements LiveSite {
   @override
   Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
     var roomInfo = await _getRoomInfo(roomId);
-    var tLiveInfo = roomInfo["roomInfo"]["tLiveInfo"];
-    var tProfileInfo = roomInfo["roomInfo"]["tProfileInfo"];
+    
+    // 兼容性修复：处理 roomInfo 结构可能缺失的情况
+    var rootData = roomInfo["roomInfo"] ?? roomInfo;
+    var tLiveInfo = rootData["tLiveInfo"];
+    var tProfileInfo = rootData["tProfileInfo"];
+
+    if (tLiveInfo == null || tProfileInfo == null) {
+       throw "无法解析直播间信息，请尝试解析直链进入";
+    }
 
     var title = tLiveInfo["sIntroduction"]?.toString() ?? "";
     if (title.isEmpty) {
@@ -356,51 +321,55 @@ class HuyaSite implements LiveSite {
     }
     var huyaLines = <HuyaLineModel>[];
     var huyaBiterates = <HuyaBitRateModel>[];
-    //读取可用线路
-    var lines = tLiveInfo["tLiveStreamInfo"]["vStreamInfo"]["value"];
-    for (var item in lines) {
-      if ((item["sFlvUrl"]?.toString() ?? "").isNotEmpty) {
-        huyaLines.add(HuyaLineModel(
-          line: item["sFlvUrl"].toString(),
-          lineType: HuyaLineType.flv,
-          flvAntiCode: item["sFlvAntiCode"].toString(),
-          hlsAntiCode: item["sHlsAntiCode"].toString(),
-          streamName: item["sStreamName"].toString(),
-          cdnType: item["sCdnType"].toString(),
-          presenterUid: roomInfo["topSid"]??0,
-        ));
+    
+    // 读取可用线路，增加判空
+    var streamData = tLiveInfo["tLiveStreamInfo"]?["vStreamInfo"]?["value"];
+    if (streamData != null) {
+      for (var item in streamData) {
+        if ((item["sFlvUrl"]?.toString() ?? "").isNotEmpty) {
+          huyaLines.add(HuyaLineModel(
+            line: item["sFlvUrl"].toString(),
+            lineType: HuyaLineType.flv,
+            flvAntiCode: item["sFlvAntiCode"].toString(),
+            hlsAntiCode: item["sHlsAntiCode"].toString(),
+            streamName: item["sStreamName"].toString(),
+            cdnType: item["sCdnType"].toString(),
+            presenterUid: roomInfo["topSid"] ?? 0,
+          ));
+        }
       }
     }
 
-    //清晰度
-    var biterates = tLiveInfo["tLiveStreamInfo"]["vBitRateInfo"]["value"];
-    for (var item in biterates) {
-      var name = item["sDisplayName"].toString();
-      if (name.contains("HDR")) {
-        continue;
+    // 清晰度，增加判空
+    var bitRateData = tLiveInfo["tLiveStreamInfo"]?["vBitRateInfo"]?["value"];
+    if (bitRateData != null) {
+      for (var item in bitRateData) {
+        var name = item["sDisplayName"].toString();
+        if (name.contains("HDR")) {
+          continue;
+        }
+        huyaBiterates.add(HuyaBitRateModel(
+          bitRate: item["iBitRate"] ?? 0,
+          name: name,
+        ));
       }
-      huyaBiterates.add(HuyaBitRateModel(
-        bitRate: item["iBitRate"],
-        name: name,
-      ));
     }
 
     var topSid = roomInfo["topSid"];
     var subSid = roomInfo["subSid"];
 
     return LiveRoomDetail(
-      cover: tLiveInfo["sScreenshot"].toString(),
-      online: tLiveInfo["lTotalCount"],
-      roomId: tLiveInfo["lProfileRoom"].toString(),
+      cover: tLiveInfo["sScreenshot"]?.toString() ?? "",
+      online: tLiveInfo["lTotalCount"] ?? 0,
+      roomId: tLiveInfo["lProfileRoom"]?.toString() ?? roomId,
       title: title,
-      userName: tProfileInfo["sNick"].toString(),
-      userAvatar: tProfileInfo["sAvatar180"].toString(),
-      introduction: tLiveInfo["sIntroduction"].toString(),
-      notice: roomInfo["welcomeText"].toString(),
-      status: roomInfo["roomInfo"]["eLiveStatus"] == 2,
+      userName: tProfileInfo["sNick"]?.toString() ?? "未知主播",
+      userAvatar: tProfileInfo["sAvatar180"]?.toString() ?? "",
+      introduction: tLiveInfo["sIntroduction"]?.toString() ?? "",
+      notice: roomInfo["welcomeText"]?.toString() ?? "",
+      status: rootData["eLiveStatus"] == 2,
       data: HuyaUrlDataModel(
-        url:
-            "https:${utf8.decode(base64.decode(roomInfo["roomProfile"]["liveLineUrl"].toString()))}",
+        url: "https:${utf8.decode(base64.decode(roomInfo["roomProfile"]?["liveLineUrl"]?.toString() ?? ""))}",
         lines: huyaLines,
         bitRates: huyaBiterates,
         uid: getUid(t: 13, e: 10),
@@ -465,27 +434,40 @@ class HuyaSite implements LiveSite {
     );
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
-    for (var item in result["response"]["3"]["docs"]) {
-      var cover = item["game_screenshot"].toString();
-      if (!cover.contains("?")) {
-        cover += "?x-oss-process=style/w338_h190&";
-      }
-
-      var title = item["game_introduction"]?.toString() ?? "";
-      if (title.isEmpty) {
-        title = item["game_roomName"]?.toString() ?? "";
-      }
-
-      var roomItem = LiveRoomItem(
-        roomId: item["room_id"].toString(),
-        title: title,
-        cover: cover,
-        userName: item["game_nick"].toString(),
-        online: int.tryParse(item["game_total_count"].toString()) ?? 0,
-      );
-      items.add(roomItem);
+    
+    // 根据真实数据结构 response -> 3 -> docs 进行解析
+    var resp3 = result?["response"]?["3"];
+    if (resp3 == null || resp3["docs"] == null) {
+      return LiveSearchRoomResult(hasMore: false, items: []);
     }
-    var hasMore = result["response"]["3"]["numFound"] > (page * 20);
+
+    for (var item in resp3["docs"]) {
+      try {
+        // 关键：从扁平化的 item 中直接提取字段，避开不存在的 tLiveInfo
+        var rawRoomId = item["game_subChannel"]?.toString() ?? "0";
+        if (rawRoomId == "0" || rawRoomId == "") {
+           rawRoomId = item["room_id"]?.toString() ?? "0";
+        }
+        
+        var title = item["game_introduction"]?.toString() ?? item["game_roomName"]?.toString() ?? "";
+        var cover = item["game_screenshot"]?.toString() ?? "";
+        var nick = item["game_nick"]?.toString() ?? "";
+        var online = int.tryParse(item["game_total_count"]?.toString() ?? "0") ?? 0;
+
+        if (rawRoomId == "0") continue;
+
+        items.add(LiveRoomItem(
+          roomId: rawRoomId,
+          title: title,
+          cover: cover,
+          userName: nick,
+          online: online,
+        ));
+      } catch (e) {
+        continue;
+      }
+    }
+    var hasMore = (resp3["numFound"] ?? 0) > (page * 20);
     return LiveSearchRoomResult(hasMore: hasMore, items: items);
   }
 
@@ -508,26 +490,36 @@ class HuyaSite implements LiveSite {
     );
     var result = json.decode(resultText);
     var items = <LiveAnchorItem>[];
-    for (var item in result["response"]["1"]["docs"]) {
-      var anchorItem = LiveAnchorItem(
-        roomId: item["room_id"].toString(),
-        avatar: item["game_avatarUrl180"].toString(),
-        userName: item["game_nick"].toString(),
-        liveStatus: item["gameLiveOn"],
-      );
-      items.add(anchorItem);
+    
+    var resp1 = result?["response"]?["1"];
+    if (resp1 == null || resp1["docs"] == null) {
+       return LiveSearchAnchorResult(hasMore: false, items: []);
     }
-    var hasMore = result["response"]["1"]["numFound"] > (page * 20);
+
+    for (var item in resp1["docs"]) {
+      try {
+        var anchorItem = LiveAnchorItem(
+          roomId: (item["game_subChannel"] ?? item["room_id"] ?? "0").toString(),
+          avatar: item["game_avatarUrl180"]?.toString() ?? "",
+          userName: item["game_nick"]?.toString() ?? "",
+          liveStatus: item["gameLiveOn"] ?? false,
+        );
+        items.add(anchorItem);
+      } catch (e) {
+        continue;
+      }
+    }
+    var hasMore = (resp1["numFound"] ?? 0) > (page * 20);
     return LiveSearchAnchorResult(hasMore: hasMore, items: items);
   }
 
   @override
   Future<bool> getLiveStatus({required String roomId}) async {
     var roomInfo = await _getRoomInfo(roomId);
-    return roomInfo["roomInfo"]["eLiveStatus"] == 2;
+    var rootData = roomInfo["roomInfo"] ?? roomInfo;
+    return rootData["eLiveStatus"] == 2;
   }
 
-  /// 匿名登录获取uid
   Future<String> getAnonymousUid() async {
     var result = await HttpClient.instance.postJson(
       "https://udblgn.huya.com/web/anonymousLogin",
@@ -581,43 +573,7 @@ class HuyaSite implements LiveSite {
     return o.join("");
   }
 
-  // String getRealUrl(String e) {
-  //   //https://github.com/wbt5/real-url/blob/master/huya.py
-  //   //使用ChatGPT转换的Dart代码,ChatGPT真好用
-  //   List<String> iAndB = e.split('?');
-  //   String i = iAndB[0];
-  //   String b = iAndB[1];
-  //   List<String> r = i.split('/');
-  //   String s = r[r.length - 1].replaceAll(RegExp(r'.(flv|m3u8)'), '');
-  //   List<String> bs = b.split('&');
-  //   List<String> c = [];
-  //   c.addAll(bs.take(3));
-  //   c.add(bs.skip(3).join("&"));
-  //   Map<String, String> n = {};
-  //   for (var str in c) {
-  //     List<String> keyValue = str.split('=');
-  //     n[keyValue[0]] = keyValue[1];
-  //   }
-  //   String fm = Uri.decodeFull(n['fm'] ?? "").split("&")[0];
-  //   String u = utf8.decode(base64Decode(fm));
-  //   String p = u.split('_')[0];
-  //   String f = (DateTime.now().millisecondsSinceEpoch * 1000).toString();
-  //   String l = n['wsTime'] ?? "";
-  //   String t = '0';
-  //   String h = [p, t, s, f, l].join("_");
-  //   String m = md5.convert(utf8.encode(h)).toString();
-  //   String y = c[c.length - 1];
-  //   String url = "$i?wsSecret=$m&wsTime=$l&u=$t&seqid=$f&$y";
-  //   url = url.replaceAll("&ctype=tars_mobile", "");
-  //   url = url.replaceAll(RegExp(r"ratio=\d+&"), "");
-  //   url = url.replaceAll(RegExp(r"imgplus_\d+"), "imgplus");
-  //   return url;
-  // }
-
   String processAnticode(String anticode, String uid, String streamname) {
-    // 来源：https://github.com/iceking2nd/real-url/blob/master/huya.py
-    // https://github.com/SeaHOH/ykdl/blob/master/ykdl/extractors/huya/live.py
-    // 通过ChatGPT转换的Dart代码
     var query = Uri.splitQueryString(anticode);
 
     query["t"] = "103";
@@ -645,10 +601,6 @@ class HuyaSite implements LiveSite {
       "ctype": query["ctype"]!,
       "ver": "1",
       "fs": query["fs"]!,
-      // "sphdcdn": query["sphdcdn"] ?? "",
-      // "sphdDC": query["sphdDC"] ?? "",
-      // "sphd": query["sphd"] ?? "",
-      // "exsphd": query["exsphd"] ?? "",
       "dMod": "mseh-0",
       "sdkPcdn": "1_1",
       "uid": uid,
@@ -663,7 +615,6 @@ class HuyaSite implements LiveSite {
   @override
   Future<List<LiveSuperChatMessage>> getSuperChatMessage(
       {required String roomId}) {
-    //尚不支持
     return Future.value([]);
   }
 }
@@ -705,7 +656,7 @@ class HuyaLineModel {
   final String streamName;
   final HuyaLineType lineType;
   int bitRate;
-  final int presenterUid; // topSid = subSid = presenterUid
+  final int presenterUid; 
 
   HuyaLineModel({
     required this.line,
