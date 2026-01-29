@@ -47,7 +47,46 @@ class HuyaSite implements LiveSite {
     return subs;
   }
 
-  // ---------------- 详情解析 (包含 ID 换算) ----------------
+  @override
+  Future<LiveCategoryResult> getCategoryRooms(LiveSubCategory category, {int page = 1}) async {
+    var resultText = await HttpClient.instance.getJson("https://www.huya.com/cache.php", queryParameters: {"m": "LiveList", "do": "getLiveListByPage", "gameId": category.id, "page": page});
+    var result = json.decode(resultText);
+    var items = <LiveRoomItem>[];
+    for (var item in result["data"]["datas"]) {
+      var cover = item["screenshot"].toString();
+      if (!cover.contains("?")) cover += "?x-oss-process=style/w338_h190&";
+      items.add(LiveRoomItem(roomId: item["profileRoom"].toString(), title: item["introduction"] ?? item["roomName"] ?? "", cover: cover, userName: item["nick"].toString(), online: int.tryParse(item["totalCount"].toString()) ?? 0));
+    }
+    return LiveCategoryResult(hasMore: result["data"]["page"] < result["data"]["totalPage"], items: items);
+  }
+
+  // ---------------- 播放清晰度与地址 (修复 Build Error 关键点) ----------------
+  @override
+  Future<List<LivePlayQuality>> getPlayQualites({required LiveRoomDetail detail}) {
+    var urlData = detail.data as HuyaUrlDataModel;
+    if (urlData.bitRates.isEmpty) {
+      urlData.bitRates = [HuyaBitRateModel(name: "原画", bitRate: 0), HuyaBitRateModel(name: "高清", bitRate: 2000)];
+    }
+    return Future.value(urlData.bitRates.map((e) => LivePlayQuality(data: {"urls": urlData.lines, "bitRate": e.bitRate}, quality: e.name)).toList());
+  }
+
+  @override
+  Future<LivePlayUrl> getPlayUrls({required LiveRoomDetail detail, required LivePlayQuality quality}) async {
+    var ls = <String>[];
+    List<HuyaLineModel> lines = quality.data["urls"];
+    int bitRate = quality.data["bitRate"];
+
+    for (var line in lines) {
+      var antiCode = await getCndTokenInfoEx(line.streamName);
+      var finalAntiCode = buildAntiCode(line.streamName, line.presenterUid, antiCode);
+      var url = '${line.line}/${line.streamName}.flv?${finalAntiCode}&codec=264';
+      if (bitRate > 0) url += "&ratio=$bitRate";
+      ls.add(url);
+    }
+    return LivePlayUrl(urls: ls, headers: {"user-agent": HYSDK_UA});
+  }
+
+  // ---------------- 详情解析 ----------------
   @override
   Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
     String realId = roomId;
@@ -62,7 +101,7 @@ class HuyaSite implements LiveSite {
     var rootData = roomInfo["roomInfo"] ?? roomInfo["data"] ?? roomInfo;
     var tLiveInfo = rootData["tLiveInfo"];
     if (tLiveInfo == null) tLiveInfo = roomInfo["data"]?["tLiveInfo"];
-    if (tLiveInfo == null) throw "解析失败，主播可能已下播";
+    if (tLiveInfo == null) throw "虎牙解析失败，主播可能未开播";
 
     var huyaLines = <HuyaLineModel>[];
     var streamInfo = tLiveInfo["tLiveStreamInfo"]?["vStreamInfo"]?["value"] ?? [];
@@ -86,7 +125,7 @@ class HuyaSite implements LiveSite {
     );
   }
 
-  // ---------------- 核心修复：搜索逻辑 ----------------
+  // ---------------- 核心搜索逻辑 ----------------
   @override
   Future<LiveSearchRoomResult> searchRooms(String keyword, {int page = 1}) async {
     var resText = await HttpClient.instance.getJson("https://search.cdn.huya.com/", queryParameters: {"m": "Search", "do": "getSearchContent", "q": keyword, "v": 4, "typ": -5, "rows": 20, "start": (page - 1) * 20});
@@ -99,7 +138,6 @@ class HuyaSite implements LiveSite {
 
     for (var item in docs3) {
       try {
-        // 1. 获取 ID：优先从 docs3 取 room_id，如果为 0，去 docs1 匹配主播名找 ID
         var rId = item["room_id"]?.toString() ?? "0";
         if (rId == "0" || rId == "null") {
           var match = docs1.firstWhere((e) => e["game_nick"] == item["game_nick"], orElse: () => null);
@@ -107,7 +145,6 @@ class HuyaSite implements LiveSite {
         }
         if (rId == "0") continue;
 
-        // 2. 获取封面：从 docs3 拿 game_screenshot 并应用原作者的 OSS 处理
         var cover = (item["game_screenshot"] ?? item["game_imgUrl"] ?? "").toString();
         if (cover.isNotEmpty) {
           if (cover.startsWith("//")) cover = "https:$cover";
@@ -126,7 +163,7 @@ class HuyaSite implements LiveSite {
     return LiveSearchRoomResult(hasMore: (resp["3"]?["numFound"] ?? 0) > (page * 20), items: items);
   }
 
-  // ---------------- 辅助加密方法 ----------------
+  // ---------------- 加密与辅助方法 ----------------
   Future<Map> _getRoomInfo(String roomId) async {
     var resText = await HttpClient.instance.getText("https://m.huya.com/$roomId", header: {"user-agent": kUserAgent});
     var text = RegExp(r"window\.HNF_GLOBAL_INIT.=.\{[\s\S]*?\}[\s\S]*?</script>").firstMatch(resText)?.group(0);
@@ -175,13 +212,9 @@ class HuyaSite implements LiveSite {
   @override Future<LiveSearchAnchorResult> searchAnchors(String keyword, {int page = 1}) async => LiveSearchAnchorResult(hasMore: false, items: []);
   @override Future<bool> getLiveStatus({required String roomId}) async => (await _getRoomInfo(roomId))["roomInfo"]?["eLiveStatus"] == 2;
   @override Future<List<LiveSuperChatMessage>> getSuperChatMessage({required String roomId}) => Future.value([]);
-  @override Future<List<LivePlayQuality>> getPlayQualites({required LiveRoomDetail detail}) {
-    var urlData = detail.data as HuyaUrlDataModel;
-    if (urlData.bitRates.isEmpty) urlData.bitRates = [HuyaBitRateModel(name: "原画", bitRate: 0), HuyaBitRateModel(name: "高清", bitRate: 2000)];
-    return Future.value(urlData.bitRates.map((e) => LivePlayQuality(data: {"urls": urlData.lines, "bitRate": e.bitRate}, quality: e.name)).toList());
-  }
 }
 
+// ---------------- 数据模型 ----------------
 class HuyaUrlDataModel {
   final String url; final String uid; List<HuyaLineModel> lines; List<HuyaBitRateModel> bitRates;
   HuyaUrlDataModel({required this.bitRates, required this.lines, required this.url, required this.uid});
