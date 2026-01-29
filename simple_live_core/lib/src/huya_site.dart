@@ -17,21 +17,16 @@ class HuyaSite implements LiveSite {
   static const String HYSDK_UA =
       "HYSDK(Windows, 30000002)_APP(pc_exe&7060000&official)_SDK(trans&2.32.3.5646)";
 
-  static Map<String, String> requestHeaders = {
+  final BaseTarsHttp tupClient = BaseTarsHttp("http://wup.huya.com", "liveui", headers: {
     'Origin': baseUrl,
     'Referer': baseUrl,
     'User-Agent': HYSDK_UA,
-  };
-
-  final BaseTarsHttp tupClient =
-      BaseTarsHttp("http://wup.huya.com", "liveui", headers: requestHeaders);
+  });
 
   @override
   String id = "huya";
-
   @override
   String name = "虎牙直播";
-
   @override
   LiveDanmaku getDanmaku() => HuyaDanmaku();
 
@@ -51,39 +46,22 @@ class HuyaSite implements LiveSite {
   }
 
   Future<List<LiveSubCategory>> getSubCategores(String id) async {
-    var result = await HttpClient.instance.getJson(
-      "https://live.cdn.huya.com/liveconfig/game/bussLive",
-      queryParameters: {"bussType": id},
-    );
+    var result = await HttpClient.instance.getJson("https://live.cdn.huya.com/liveconfig/game/bussLive", queryParameters: {"bussType": id});
     List<LiveSubCategory> subs = [];
     for (var item in result["data"]) {
       var gid = item["gid"] is Map ? item["gid"]["value"].toString().split(",").first : item["gid"].toString();
-      subs.add(LiveSubCategory(
-        id: gid,
-        name: item["gameFullName"].toString(),
-        parentId: id,
-        pic: "https://huyaimg.msstatic.com/cdnimage/game/$gid-MS.jpg",
-      ));
+      subs.add(LiveSubCategory(id: gid, name: item["gameFullName"].toString(), parentId: id, pic: "https://huyaimg.msstatic.com/cdnimage/game/$gid-MS.jpg"));
     }
     return subs;
   }
 
   @override
   Future<LiveCategoryResult> getCategoryRooms(LiveSubCategory category, {int page = 1}) async {
-    var resultText = await HttpClient.instance.getJson(
-      "https://www.huya.com/cache.php",
-      queryParameters: {"m": "LiveList", "do": "getLiveListByPage", "gameId": category.id, "page": page},
-    );
+    var resultText = await HttpClient.instance.getJson("https://www.huya.com/cache.php", queryParameters: {"m": "LiveList", "do": "getLiveListByPage", "gameId": category.id, "page": page});
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
     for (var item in result["data"]["datas"]) {
-      items.add(LiveRoomItem(
-        roomId: item["profileRoom"].toString(),
-        title: item["introduction"] ?? item["roomName"] ?? "",
-        cover: item["screenshot"].toString(),
-        userName: item["nick"].toString(),
-        online: int.tryParse(item["totalCount"].toString()) ?? 0,
-      ));
+      items.add(LiveRoomItem(roomId: item["profileRoom"].toString(), title: item["introduction"] ?? item["roomName"] ?? "", cover: item["screenshot"].toString(), userName: item["nick"].toString(), online: int.tryParse(item["totalCount"].toString()) ?? 0));
     }
     return LiveCategoryResult(hasMore: result["data"]["page"] < result["data"]["totalPage"], items: items);
   }
@@ -91,9 +69,7 @@ class HuyaSite implements LiveSite {
   @override
   Future<List<LivePlayQuality>> getPlayQualites({required LiveRoomDetail detail}) {
     var urlData = detail.data as HuyaUrlDataModel;
-    if (urlData.bitRates.isEmpty) {
-      urlData.bitRates = [HuyaBitRateModel(name: "原画", bitRate: 0), HuyaBitRateModel(name: "高清", bitRate: 2000)];
-    }
+    if (urlData.bitRates.isEmpty) urlData.bitRates = [HuyaBitRateModel(name: "原画", bitRate: 0), HuyaBitRateModel(name: "高清", bitRate: 2000)];
     return Future.value(urlData.bitRates.map((e) => LivePlayQuality(data: {"urls": urlData.lines, "bitRate": e.bitRate}, quality: e.name)).toList());
   }
 
@@ -113,28 +89,23 @@ class HuyaSite implements LiveSite {
   @override
   Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
     String realRoomId = roomId;
-
-    // --- 修正 1：长 ID 自动识别与转换 ---
-    // 如果 ID 长度大于 10 位，通常是 YYID，尝试转换
+    // YYID 长号自动转换短号逻辑
     if (roomId.length >= 10) {
       try {
         var convertRes = await HttpClient.instance.getText("https://www.huya.com/$roomId", header: {"user-agent": kUserAgent});
         var match = RegExp(r'\"lProfileRoom\":(\d+)').firstMatch(convertRes);
-        if (match != null) {
-          realRoomId = match.group(1)!;
-        }
+        if (match != null) realRoomId = match.group(1)!;
       } catch (_) {}
     }
 
     var roomInfo = await _getRoomInfo(realRoomId);
-    
     var rootData = roomInfo["roomInfo"] ?? roomInfo["data"] ?? roomInfo;
     var tLiveInfo = rootData["tLiveInfo"];
     var tProfileInfo = rootData["tProfileInfo"];
 
     if (tLiveInfo == null) {
        tLiveInfo = roomInfo["data"]?["tLiveInfo"];
-       if (tLiveInfo == null) throw "虎牙直播间($realRoomId)解析失败：主播可能已下播";
+       if (tLiveInfo == null) throw "虎牙直播间($realRoomId)解析失败";
     }
 
     var huyaLines = <HuyaLineModel>[];
@@ -170,33 +141,34 @@ class HuyaSite implements LiveSite {
 
   @override
   Future<LiveSearchRoomResult> searchRooms(String keyword, {int page = 1}) async {
-    var resultText = await HttpClient.instance.getJson(
-      "https://search.cdn.huya.com/",
-      queryParameters: {"m": "Search", "do": "getSearchContent", "q": keyword, "v": 4, "typ": -5, "rows": 20, "start": (page - 1) * 20},
-    );
+    var resultText = await HttpClient.instance.getJson("https://search.cdn.huya.com/", queryParameters: {"m": "Search", "do": "getSearchContent", "q": keyword, "v": 4, "typ": -5, "rows": 20, "start": (page - 1) * 20});
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
     
-    // --- 修正 2：优先读取 JSON 中的 "1" 节点 (包含短号 room_id) ---
     var response = result?["response"] ?? {};
+    // 关键修复：优先扫描 "1" 节点以获取准确的 room_id
     var docs = response["1"]?["docs"] ?? response["3"]?["docs"] ?? [];
     
     for (var item in docs) {
       try {
-        // 优先使用 room_id (短号)，如果没有或为 0，才使用 game_subChannel (长号)
         var rId = "0";
         if (item["room_id"] != null && item["room_id"] != 0) {
           rId = item["room_id"].toString();
         } else {
           rId = (item["game_subChannel"] ?? item["game_id"] ?? "0").toString();
         }
-
         if (rId == "0") continue;
+
+        // 封面字段多级 Fallback 修复
+        String coverUrl = item["game_screenshot"]?.toString() ?? 
+                          item["game_imgUrl"]?.toString() ?? 
+                          item["cover"]?.toString() ?? "";
+        if (coverUrl.startsWith("//")) coverUrl = "https:$coverUrl";
 
         items.add(LiveRoomItem(
           roomId: rId,
           title: item["game_introduction"]?.toString() ?? item["live_intro"]?.toString() ?? "",
-          cover: item["game_screenshot"]?.toString() ?? "",
+          cover: coverUrl,
           userName: item["game_nick"]?.toString() ?? "",
           online: int.tryParse(item["game_total_count"]?.toString() ?? item["game_activityCount"]?.toString() ?? "0") ?? 0,
         ));
@@ -205,13 +177,11 @@ class HuyaSite implements LiveSite {
     return LiveSearchRoomResult(hasMore: (response["1"]?["numFound"] ?? 0) > (page * 20), items: items);
   }
 
-  // --- 其余辅助方法保持不变 ---
   Future<Map> _getRoomInfo(String roomId) async {
     var resultText = await HttpClient.instance.getText("https://m.huya.com/$roomId", header: {"user-agent": kUserAgent});
     var text = RegExp(r"window\.HNF_GLOBAL_INIT.=.\{[\s\S]*?\}[\s\S]*?</script>").firstMatch(resultText)?.group(0);
     if (text == null) return {};
-    var jsonText = text.replaceAll(RegExp(r"window\.HNF_GLOBAL_INIT.=."), '').replaceAll("</script>", "")
-        .replaceAllMapped(RegExp(r'function.*?\(.*?\).\{[\s\S]*?\}'), (match) => '""');
+    var jsonText = text.replaceAll(RegExp(r"window\.HNF_GLOBAL_INIT.=."), '').replaceAll("</script>", "").replaceAllMapped(RegExp(r'function.*?\(.*?\).\{[\s\S]*?\}'), (match) => '""');
     var jsonObj = json.decode(jsonText);
     jsonObj["topSid"] = int.tryParse(RegExp(r'lChannelId":([0-9]+)').firstMatch(resultText)?.group(1) ?? "0");
     jsonObj["subSid"] = int.tryParse(RegExp(r'lSubChannelId":([0-9]+)').firstMatch(resultText)?.group(1) ?? "0");
@@ -239,18 +209,15 @@ class HuyaSite implements LiveSite {
     return resp.sFlvToken;
   }
 
-  int rotl64(int t) {
-    final low = t & 0xFFFFFFFF;
-    return (t & ~0xFFFFFFFF) | (((low << 8) | (low >> 24)) & 0xFFFFFFFF);
-  }
+  int rotl64(int t) => (t & ~0xFFFFFFFF) | ((((t & 0xFFFFFFFF) << 8) | ((t & 0xFFFFFFFF) >> 24)) & 0xFFFFFFFF);
 
   String getUid() {
     var n = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split("");
     var o = List.filled(36, '');
     for (var i = 0; i < 36; i++) {
-      if (i == 8 || i == 13 || i == 18 || i == 23) { o[i] = "-"; } 
-      else if (i == 14) { o[i] = "4"; }
-      else { o[i] = n[Random().nextInt(16)]; }
+      if (i == 8 || i == 13 || i == 18 || i == 23) o[i] = "-";
+      else if (i == 14) o[i] = "4";
+      else o[i] = n[Random().nextInt(16)];
     }
     return o.join("");
   }
@@ -269,14 +236,11 @@ class HuyaUrlDataModel {
   final String url; final String uid; List<HuyaLineModel> lines; List<HuyaBitRateModel> bitRates;
   HuyaUrlDataModel({required this.bitRates, required this.lines, required this.url, required this.uid});
 }
-
 enum HuyaLineType { flv, hls }
-
 class HuyaLineModel {
   final String line; final String cdnType; final String flvAntiCode; final String hlsAntiCode; final String streamName; final HuyaLineType lineType; final int presenterUid;
   HuyaLineModel({required this.line, required this.lineType, required this.flvAntiCode, required this.hlsAntiCode, required this.streamName, required this.cdnType, required this.presenterUid});
 }
-
 class HuyaBitRateModel {
   final String name; final int bitRate;
   HuyaBitRateModel({required this.bitRate, required this.name});
