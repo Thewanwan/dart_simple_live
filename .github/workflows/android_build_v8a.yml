@@ -2,12 +2,11 @@ name: Build Android v8a
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ] # 或者是 master
     paths:
-      - 'simple_live_core/**' # 核心逻辑变动触发
-      - 'simple_live_app/**'  # 版本号变动触发
-  workflow_dispatch: # 保留手动打包按钮
+      - 'simple_live_core/**' # 核心修复逻辑变动
+      - 'simple_live_app/**'  # 版本号变动
+  workflow_dispatch:
 
 jobs:
   build-android:
@@ -20,15 +19,13 @@ jobs:
         with:
           distribution: "zulu"
           java-version: "17"
-          cache: "gradle"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: "3.38.x"
-          cache: true
 
-      # 使用 ZI_FEI_YU 还原签名
+      # 还原签名文件
       - name: Restore Keystore
         env:
           MY_BASE64: ${{ secrets.ZI_FEI_YU }}
@@ -44,12 +41,12 @@ jobs:
         run: |
           cd simple_live_app
           flutter clean
-          flutter pub upgrade
           flutter pub get
+          # 针对 vivo/Android 15 优化
           flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
 
-      - name: Upload Artifact
+      - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-v8a-Build-${{ github.run_number }}
+          name: SimpleLive-v8a-Build
           path: simple_live_app/build/app/outputs/flutter-apk/app-release.apk
