@@ -62,9 +62,7 @@ class HuyaSite implements LiveSite {
     var items = <LiveRoomItem>[];
     for (var item in result["data"]["datas"]) {
       var cover = item["screenshot"].toString();
-      if (!cover.contains("?")) {
-        cover += "?x-oss-process=style/w338_h190&";
-      }
+      if (!cover.contains("?")) cover += "?x-oss-process=style/w338_h190&";
       items.add(LiveRoomItem(roomId: item["profileRoom"].toString(), title: item["introduction"] ?? item["roomName"] ?? "", cover: cover, userName: item["nick"].toString(), online: int.tryParse(item["totalCount"].toString()) ?? 0));
     }
     return LiveCategoryResult(hasMore: result["data"]["page"] < result["data"]["totalPage"], items: items);
@@ -100,46 +98,22 @@ class HuyaSite implements LiveSite {
         if (match != null) realRoomId = match.group(1)!;
       } catch (_) {}
     }
-
     var roomInfo = await _getRoomInfo(realRoomId);
     var rootData = roomInfo["roomInfo"] ?? roomInfo["data"] ?? roomInfo;
     var tLiveInfo = rootData["tLiveInfo"];
     var tProfileInfo = rootData["tProfileInfo"];
-
     if (tLiveInfo == null) {
        tLiveInfo = roomInfo["data"]?["tLiveInfo"];
-       if (tLiveInfo == null) throw "虎牙直播间($realRoomId)解析失败";
+       if (tLiveInfo == null) throw "虎牙解析失败";
     }
-
     var huyaLines = <HuyaLineModel>[];
     var streamInfo = tLiveInfo["tLiveStreamInfo"]?["vStreamInfo"]?["value"] ?? [];
     for (var item in streamInfo) {
       if ((item["sFlvUrl"]?.toString() ?? "").isNotEmpty) {
-        huyaLines.add(HuyaLineModel(
-          line: item["sFlvUrl"].toString(),
-          lineType: HuyaLineType.flv,
-          flvAntiCode: item["sFlvAntiCode"].toString(),
-          hlsAntiCode: item["sHlsAntiCode"].toString(),
-          streamName: item["sStreamName"].toString(),
-          cdnType: item["sCdnType"].toString(),
-          presenterUid: roomInfo["topSid"] ?? 0,
-        ));
+        huyaLines.add(HuyaLineModel(line: item["sFlvUrl"].toString(), lineType: HuyaLineType.flv, flvAntiCode: item["sFlvAntiCode"].toString(), hlsAntiCode: item["sHlsAntiCode"].toString(), streamName: item["sStreamName"].toString(), cdnType: item["sCdnType"].toString(), presenterUid: roomInfo["topSid"] ?? 0));
       }
     }
-
-    return LiveRoomDetail(
-      cover: tLiveInfo["sScreenshot"]?.toString() ?? "",
-      online: tLiveInfo["lTotalCount"] ?? 0,
-      roomId: tLiveInfo["lProfileRoom"]?.toString() ?? realRoomId,
-      title: tLiveInfo["sIntroduction"]?.toString() ?? tLiveInfo["sRoomName"]?.toString() ?? "",
-      userName: tProfileInfo?["sNick"]?.toString() ?? "虎牙主播",
-      userAvatar: tProfileInfo?["sAvatar180"]?.toString() ?? "",
-      introduction: tLiveInfo["sIntroduction"]?.toString() ?? "",
-      status: rootData["eLiveStatus"] == 2,
-      data: HuyaUrlDataModel(url: "", lines: huyaLines, bitRates: [], uid: getUid()),
-      danmakuData: HuyaDanmakuArgs(ayyuid: tLiveInfo["lYyid"] ?? 0, topSid: roomInfo["topSid"] ?? 0, subSid: roomInfo["subSid"] ?? 0),
-      url: "https://www.huya.com/$realRoomId",
-    );
+    return LiveRoomDetail(cover: tLiveInfo["sScreenshot"]?.toString() ?? "", online: tLiveInfo["lTotalCount"] ?? 0, roomId: tLiveInfo["lProfileRoom"]?.toString() ?? realRoomId, title: tLiveInfo["sIntroduction"]?.toString() ?? tLiveInfo["sRoomName"]?.toString() ?? "", userName: tProfileInfo?["sNick"]?.toString() ?? "虎牙主播", userAvatar: tProfileInfo?["sAvatar180"]?.toString() ?? "", introduction: tLiveInfo["sIntroduction"]?.toString() ?? "", status: rootData["eLiveStatus"] == 2, data: HuyaUrlDataModel(url: "", lines: huyaLines, bitRates: [], uid: getUid()), danmakuData: HuyaDanmakuArgs(ayyuid: tLiveInfo["lYyid"] ?? 0, topSid: roomInfo["topSid"] ?? 0, subSid: roomInfo["subSid"] ?? 0), url: "https://www.huya.com/$realRoomId");
   }
 
   @override
@@ -147,38 +121,34 @@ class HuyaSite implements LiveSite {
     var resultText = await HttpClient.instance.getJson("https://search.cdn.huya.com/", queryParameters: {"m": "Search", "do": "getSearchContent", "q": keyword, "v": 4, "typ": -5, "rows": 20, "start": (page - 1) * 20});
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
-    var response = result?["response"] ?? {};
-    var docs = response["1"]?["docs"] ?? response["3"]?["docs"] ?? [];
     
-    for (var item in docs) {
+    // --- 核心修复：合并 1 和 3 节点的数据 ---
+    var response = result?["response"] ?? {};
+    var docs1 = response["1"]?["docs"] ?? [];
+    var docs3 = response["3"]?["docs"] ?? [];
+    
+    // 我们主要遍历 docs3，因为它有封面图字段
+    for (var item in docs3) {
       try {
-        var rId = "0";
-        if (item["room_id"] != null && item["room_id"] != 0) {
-          rId = item["room_id"].toString();
-        } else {
-          rId = (item["game_subChannel"] ?? item["game_id"] ?? "0").toString();
+        var rId = item["room_id"]?.toString() ?? "0";
+        // 如果 docs3 的 room_id 是 0，去 docs1 找相同主播的 room_id
+        if (rId == "0" || rId == "null") {
+           var nick = item["game_nick"];
+           var match = docs1.firstWhere((e) => e["game_nick"] == nick, orElse: () => null);
+           rId = (match?["room_id"] ?? item["game_subChannel"] ?? "0").toString();
         }
         if (rId == "0") continue;
 
-        // --- 封面修复逻辑：补全 OSS 参数 ---
         var cover = (item["game_screenshot"] ?? item["game_imgUrl"] ?? item["cover"] ?? "").toString();
         if (cover.isNotEmpty) {
           if (cover.startsWith("//")) cover = "https:$cover";
-          if (!cover.contains("?")) {
-            cover += "?x-oss-process=style/w338_h190&";
-          }
+          if (!cover.contains("?")) cover += "?x-oss-process=style/w338_h190&";
         }
 
-        items.add(LiveRoomItem(
-          roomId: rId,
-          title: item["game_introduction"]?.toString() ?? item["live_intro"]?.toString() ?? "",
-          cover: cover,
-          userName: item["game_nick"]?.toString() ?? "",
-          online: int.tryParse(item["game_total_count"]?.toString() ?? item["game_activityCount"]?.toString() ?? "0") ?? 0,
-        ));
+        items.add(LiveRoomItem(roomId: rId, title: item["game_introduction"]?.toString() ?? item["game_roomName"]?.toString() ?? "", cover: cover, userName: item["game_nick"]?.toString() ?? "", online: int.tryParse(item["game_total_count"]?.toString() ?? "0") ?? 0));
       } catch (_) { continue; }
     }
-    return LiveSearchRoomResult(hasMore: (response["1"]?["numFound"] ?? 0) > (page * 20), items: items);
+    return LiveSearchRoomResult(hasMore: (response["3"]?["numFound"] ?? 0) > (page * 20), items: items);
   }
 
   Future<Map> _getRoomInfo(String roomId) async {
