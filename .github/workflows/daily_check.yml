@@ -2,8 +2,8 @@ name: Daily API json Check and Auto Update
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 每天北京时间早上 8 点运行一次
-  workflow_dispatch: # 支持手动点击运行，方便测试
+    - cron: '0 0 * * *' # 每天北京时间早上 8 点自动运行
+  workflow_dispatch: # 支持在 GitHub 页面手动点击运行，方便测试
 
 jobs:
   check-and-update:
@@ -19,14 +19,18 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
-        run: pip install requests
+      # 1. 使用系统自带的 curl 抓取虎牙接口数据，保存为本地 JSON 文件
+      - name: Fetch Huya JSON snapshot
+        run: |
+          mkdir -p scripts
+          curl -L "https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=%E9%9C%B2%E9%9B%AA&v=4&typ=-5&rows=1" -o scripts/huya_api.json
+          echo "✅ 接口数据已缓存至 scripts/huya_api.json"
 
-      # 1. 运行你的探测脚本，如果有变动，脚本会直接修改本地文件
-      - name: Run API Check Script
+      # 2. 运行 Python 脚本处理本地 JSON，对比并修改代码
+      - name: Run Python Parser
         run: python scripts/check_api.py
 
-      # 2. 检查代码是否有变动
+      # 3. 检查代码文件是否有被脚本修改
       - name: Check for changes
         id: git-check
         run: |
@@ -36,14 +40,14 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      # 3. 如果代码变了，自动增加版本号并推送到仓库
+      # 4. 如果代码变了，自动增加构建号 (+ 后面的数字) 并推送到仓库
       - name: Auto Increment Version and Commit
         if: steps.git-check.outputs.changed == 'true'
         run: |
           git config --global user.name "API-Bot"
           git config --global user.email "bot@github.com"
           
-          # 自动递增 pubspec.yaml 中的构建号 (+ 后面的数字)
+          # 自动递增 pubspec.yaml 中的构建号
           # 例如 1.11.5+11105 变成 1.11.5+11106
           sed -i "s/version: \(.*\)+\(.*\)/echo \"version: \1+\$((\2+1))\"/e" simple_live_app/pubspec.yaml
           
@@ -51,7 +55,7 @@ jobs:
           git commit -m "chore: 发现虎牙接口变动，已自动修复并升级版本 [skip ci]"
           git push
 
-      # 4. 触发打包任务 (Build Android v8a)
+      # 5. 发送信号触发打包任务 (android_build.yml)
       - name: Trigger Build Workflow
         if: steps.git-check.outputs.changed == 'true'
         uses: peter-evans/repository-dispatch@v2
