@@ -1,36 +1,35 @@
-name: Daily API json Check and Auto Update
+name: Daily API Check
 
 on:
   schedule:
-    - cron: '0 0 * * *' # 每天北京时间早上 8 点自动运行
-  workflow_dispatch: # 支持在 GitHub 页面手动点击运行，方便测试
+    - cron: '0 0 * * *' # UTC 0:00 即北京时间 08:00
+  workflow_dispatch:
 
 jobs:
-  check-and-update:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }} # 必须使用 token 才能有权限推送代码
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      # 1. 使用系统自带的 curl 抓取虎牙接口数据，保存为本地 JSON 文件
-      - name: Fetch Huya JSON snapshot
+      # 下载黑匣子 JSON
+      - name: Fetch API
         run: |
           mkdir -p scripts
           curl -L "https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=%E9%9C%B2%E9%9B%AA&v=4&typ=-5&rows=1" -o scripts/huya_api.json
-          echo "✅ 接口数据已缓存至 scripts/huya_api.json"
 
-      # 2. 运行 Python 脚本处理本地 JSON，对比并修改代码
-      - name: Run Python Parser
+      # 运行大脑进行解析
+      - name: Run Brain
         run: python scripts/check_api.py
 
-      # 3. 检查代码文件是否有被脚本修改
+      # 关键：检查是否有代码改动
       - name: Check for changes
         id: git-check
         run: |
@@ -40,25 +39,16 @@ jobs:
             echo "changed=false" >> $GITHUB_OUTPUT
           fi
 
-      # 4. 如果代码变了，自动增加构建号 (+ 后面的数字) 并推送到仓库
-      - name: Auto Increment Version and Commit
+      # 如果变了，升级版本并 Push（这会触发 android_build.yml）
+      - name: Push Changes
         if: steps.git-check.outputs.changed == 'true'
         run: |
-          git config --global user.name "API-Bot"
-          git config --global user.email "bot@github.com"
+          git config --global user.name "ZI-FEI-YU-BOT"
+          git config --global user.email "bot@zifeiyu.com"
           
-          # 自动递增 pubspec.yaml 中的构建号
-          # 例如 1.11.5+11105 变成 1.11.5+11106
+          # 自动升级 pubspec.yaml 版本
           sed -i "s/version: \(.*\)+\(.*\)/echo \"version: \1+\$((\2+1))\"/e" simple_live_app/pubspec.yaml
           
           git add .
-          git commit -m "chore: 发现虎牙接口变动，已自动修复并升级版本 [skip ci]"
+          git commit -m "chore: 自动修复虎牙接口并升级版本"
           git push
-
-      # 5. 发送信号触发打包任务 (android_build.yml)
-      - name: Trigger Build Workflow
-        if: steps.git-check.outputs.changed == 'true'
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: trigger-v8a-build
