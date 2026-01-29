@@ -61,7 +61,11 @@ class HuyaSite implements LiveSite {
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
     for (var item in result["data"]["datas"]) {
-      items.add(LiveRoomItem(roomId: item["profileRoom"].toString(), title: item["introduction"] ?? item["roomName"] ?? "", cover: item["screenshot"].toString(), userName: item["nick"].toString(), online: int.tryParse(item["totalCount"].toString()) ?? 0));
+      var cover = item["screenshot"].toString();
+      if (!cover.contains("?")) {
+        cover += "?x-oss-process=style/w338_h190&";
+      }
+      items.add(LiveRoomItem(roomId: item["profileRoom"].toString(), title: item["introduction"] ?? item["roomName"] ?? "", cover: cover, userName: item["nick"].toString(), online: int.tryParse(item["totalCount"].toString()) ?? 0));
     }
     return LiveCategoryResult(hasMore: result["data"]["page"] < result["data"]["totalPage"], items: items);
   }
@@ -89,7 +93,6 @@ class HuyaSite implements LiveSite {
   @override
   Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
     String realRoomId = roomId;
-    // YYID 长号自动转换短号逻辑
     if (roomId.length >= 10) {
       try {
         var convertRes = await HttpClient.instance.getText("https://www.huya.com/$roomId", header: {"user-agent": kUserAgent});
@@ -144,9 +147,7 @@ class HuyaSite implements LiveSite {
     var resultText = await HttpClient.instance.getJson("https://search.cdn.huya.com/", queryParameters: {"m": "Search", "do": "getSearchContent", "q": keyword, "v": 4, "typ": -5, "rows": 20, "start": (page - 1) * 20});
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
-    
     var response = result?["response"] ?? {};
-    // 关键修复：优先扫描 "1" 节点以获取准确的 room_id
     var docs = response["1"]?["docs"] ?? response["3"]?["docs"] ?? [];
     
     for (var item in docs) {
@@ -159,20 +160,23 @@ class HuyaSite implements LiveSite {
         }
         if (rId == "0") continue;
 
-        // 封面字段多级 Fallback 修复
-        String coverUrl = item["game_screenshot"]?.toString() ?? 
-                          item["game_imgUrl"]?.toString() ?? 
-                          item["cover"]?.toString() ?? "";
-        if (coverUrl.startsWith("//")) coverUrl = "https:$coverUrl";
+        // --- 封面修复逻辑：补全 OSS 参数 ---
+        var cover = (item["game_screenshot"] ?? item["game_imgUrl"] ?? item["cover"] ?? "").toString();
+        if (cover.isNotEmpty) {
+          if (cover.startsWith("//")) cover = "https:$cover";
+          if (!cover.contains("?")) {
+            cover += "?x-oss-process=style/w338_h190&";
+          }
+        }
 
         items.add(LiveRoomItem(
           roomId: rId,
           title: item["game_introduction"]?.toString() ?? item["live_intro"]?.toString() ?? "",
-          cover: coverUrl,
+          cover: cover,
           userName: item["game_nick"]?.toString() ?? "",
           online: int.tryParse(item["game_total_count"]?.toString() ?? item["game_activityCount"]?.toString() ?? "0") ?? 0,
         ));
-      } catch (e) { continue; }
+      } catch (_) { continue; }
     }
     return LiveSearchRoomResult(hasMore: (response["1"]?["numFound"] ?? 0) > (page * 20), items: items);
   }
