@@ -112,17 +112,29 @@ class HuyaSite implements LiveSite {
 
   @override
   Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
-    var roomInfo = await _getRoomInfo(roomId);
+    String realRoomId = roomId;
+
+    // --- 修正 1：长 ID 自动识别与转换 ---
+    // 如果 ID 长度大于 10 位，通常是 YYID，尝试转换
+    if (roomId.length >= 10) {
+      try {
+        var convertRes = await HttpClient.instance.getText("https://www.huya.com/$roomId", header: {"user-agent": kUserAgent});
+        var match = RegExp(r'\"lProfileRoom\":(\d+)').firstMatch(convertRes);
+        if (match != null) {
+          realRoomId = match.group(1)!;
+        }
+      } catch (_) {}
+    }
+
+    var roomInfo = await _getRoomInfo(realRoomId);
     
-    // 多级路径解析方案，专门应对 Android 15 下的数据结构碎片化
     var rootData = roomInfo["roomInfo"] ?? roomInfo["data"] ?? roomInfo;
     var tLiveInfo = rootData["tLiveInfo"];
     var tProfileInfo = rootData["tProfileInfo"];
 
     if (tLiveInfo == null) {
-       // 如果主路径失败，尝试在 data 节点深度搜索
        tLiveInfo = roomInfo["data"]?["tLiveInfo"];
-       if (tLiveInfo == null) throw "虎牙直播间($roomId)解析失败：主播可能已下播或正在维护";
+       if (tLiveInfo == null) throw "虎牙直播间($realRoomId)解析失败：主播可能已下播";
     }
 
     var huyaLines = <HuyaLineModel>[];
@@ -144,15 +156,15 @@ class HuyaSite implements LiveSite {
     return LiveRoomDetail(
       cover: tLiveInfo["sScreenshot"]?.toString() ?? "",
       online: tLiveInfo["lTotalCount"] ?? 0,
-      roomId: tLiveInfo["lProfileRoom"]?.toString() ?? roomId,
+      roomId: tLiveInfo["lProfileRoom"]?.toString() ?? realRoomId,
       title: tLiveInfo["sIntroduction"]?.toString() ?? tLiveInfo["sRoomName"]?.toString() ?? "",
       userName: tProfileInfo?["sNick"]?.toString() ?? "虎牙主播",
       userAvatar: tProfileInfo?["sAvatar180"]?.toString() ?? "",
       introduction: tLiveInfo["sIntroduction"]?.toString() ?? "",
       status: rootData["eLiveStatus"] == 2,
-      data: HuyaUrlDataModel(url: "", lines: huyaLines, bitRates: [], uid: getUid(t: 13, e: 10)),
+      data: HuyaUrlDataModel(url: "", lines: huyaLines, bitRates: [], uid: getUid()),
       danmakuData: HuyaDanmakuArgs(ayyuid: tLiveInfo["lYyid"] ?? 0, topSid: roomInfo["topSid"] ?? 0, subSid: roomInfo["subSid"] ?? 0),
-      url: "https://www.huya.com/$roomId",
+      url: "https://www.huya.com/$realRoomId",
     );
   }
 
@@ -164,25 +176,36 @@ class HuyaSite implements LiveSite {
     );
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
-    var docs = result?["response"]?["3"]?["docs"] ?? [];
+    
+    // --- 修正 2：优先读取 JSON 中的 "1" 节点 (包含短号 room_id) ---
+    var response = result?["response"] ?? {};
+    var docs = response["1"]?["docs"] ?? response["3"]?["docs"] ?? [];
     
     for (var item in docs) {
-      // 核心修复：优先取短 ID (game_subChannel)，彻底避免长 ID (YYID) 的解析兼容性问题
-      var rId = (item["game_subChannel"] ?? item["room_id"] ?? item["game_id"] ?? "0").toString();
-      if (rId == "0") continue;
+      try {
+        // 优先使用 room_id (短号)，如果没有或为 0，才使用 game_subChannel (长号)
+        var rId = "0";
+        if (item["room_id"] != null && item["room_id"] != 0) {
+          rId = item["room_id"].toString();
+        } else {
+          rId = (item["game_subChannel"] ?? item["game_id"] ?? "0").toString();
+        }
 
-      items.add(LiveRoomItem(
-        roomId: rId,
-        title: item["game_introduction"]?.toString() ?? item["game_roomName"]?.toString() ?? "",
-        cover: item["game_screenshot"]?.toString() ?? "",
-        userName: item["game_nick"]?.toString() ?? "",
-        online: int.tryParse(item["game_total_count"]?.toString() ?? "0") ?? 0,
-      ));
+        if (rId == "0") continue;
+
+        items.add(LiveRoomItem(
+          roomId: rId,
+          title: item["game_introduction"]?.toString() ?? item["live_intro"]?.toString() ?? "",
+          cover: item["game_screenshot"]?.toString() ?? "",
+          userName: item["game_nick"]?.toString() ?? "",
+          online: int.tryParse(item["game_total_count"]?.toString() ?? item["game_activityCount"]?.toString() ?? "0") ?? 0,
+        ));
+      } catch (e) { continue; }
     }
-    return LiveSearchRoomResult(hasMore: (result?["response"]?["3"]?["numFound"] ?? 0) > (page * 20), items: items);
+    return LiveSearchRoomResult(hasMore: (response["1"]?["numFound"] ?? 0) > (page * 20), items: items);
   }
 
-  // --- 辅助方法与加密逻辑保持不变 ---
+  // --- 其余辅助方法保持不变 ---
   Future<Map> _getRoomInfo(String roomId) async {
     var resultText = await HttpClient.instance.getText("https://m.huya.com/$roomId", header: {"user-agent": kUserAgent});
     var text = RegExp(r"window\.HNF_GLOBAL_INIT.=.\{[\s\S]*?\}[\s\S]*?</script>").firstMatch(resultText)?.group(0);
@@ -221,7 +244,7 @@ class HuyaSite implements LiveSite {
     return (t & ~0xFFFFFFFF) | (((low << 8) | (low >> 24)) & 0xFFFFFFFF);
   }
 
-  String getUid({int? t, int? e}) {
+  String getUid() {
     var n = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz".split("");
     var o = List.filled(36, '');
     for (var i = 0; i < 36; i++) {
