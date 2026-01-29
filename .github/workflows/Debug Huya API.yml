@@ -1,0 +1,12 @@
+name: Debug Huya API
+on: workflow_dispatch
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch Huya API Data
+        run: |
+          # 模拟 App 的请求参数搜索“露雪”
+          curl -s "https://search.cdn.huya.com/?m=Search&do=getSearchContent&q=%E9%9C%B2%E9%9B%AA&uid=0&v=4&typ=-5&livestate=0&rows=5&start=0" \
+          -H "User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 13_2_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/13.0.3 Mobile/15E148 Safari/604.1" \
+          | python3 -m json.tool
