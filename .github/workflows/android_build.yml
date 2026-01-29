@@ -1,7 +1,7 @@
 name: Build Android v8a
 
 on:
-  workflow_dispatch: # 手动触发
+  workflow_dispatch: 
 
 jobs:
   build-android:
@@ -22,11 +22,13 @@ jobs:
           flutter-version: "3.38.x"
           cache: true
 
-      # 使用你之前验证成功的“自建签名”逻辑，解决 null 报错
-      - name: Create My Own Keystore
+      # 从 Secrets 还原你之前生成的固定签名，确保 vivo 手机允许覆盖安装
+      - name: Restore Keystore from Secrets
+        env:
+          MY_BASE64: ${{ secrets.MY_KEY_BASE64 }}
         run: |
+          echo "$MY_BASE64" | base64 -d > simple_live_app/android/my-release-key.jks
           cd simple_live_app/android
-          keytool -genkey -v -keystore my-release-key.jks -keyalg RSA -keysize 2048 -validity 10000 -alias mykey -storepass 123456 -keypass 123456 -dname "CN=MyName, OU=Dev, O=MyOrg, L=City, S=State, C=CH"
           echo "storeFile=../my-release-key.jks" > key.properties
           echo "storePassword=123456" >> key.properties
           echo "keyPassword=123456" >> key.properties
@@ -35,12 +37,15 @@ jobs:
       - name: Build v8a APK
         run: |
           cd simple_live_app
+          # 必须执行 clean，否则你修改的 huya_site.dart 可能不会被重新编译
+          flutter clean
+          flutter pub upgrade
           flutter pub get
-          # 关键指令：只打包 64 位 (arm64-v8a)
-          flutter build apk --release --target-platform android-arm64
+          # 针对 vivo X100 优化，只打 arm64 架构
+          flutter build apk --release --target-platform android-arm64 --no-tree-shake-icons
 
       - name: Upload v8a APK
         uses: actions/upload-artifact@v4
         with:
-          name: SimpleLive-Android-v8a
+          name: SimpleLive-Android-v8a-Fixed
           path: simple_live_app/build/app/outputs/flutter-apk/app-release.apk
