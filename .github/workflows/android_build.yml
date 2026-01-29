@@ -1,4 +1,4 @@
-name: Build Android v8a (Confirmed Version)
+name: Build Android v8a
 
 on:
   workflow_dispatch: # 手动触发
