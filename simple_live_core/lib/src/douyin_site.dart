@@ -64,6 +64,82 @@ class DouyinSite implements LiveSite {
     }
   }
 
+  // ====================== 核心解析辅助算法开始 ======================
+  
+  /// 提取并还原 RSC 流式数据块
+  String _getCleanRscData(String html) {
+    final RegExp paceRegex = RegExp(r'self\.__pace_f\.push\(\[1,"(.*?)"\]\)');
+    final matches = paceRegex.allMatches(html);
+
+    StringBuffer sb = StringBuffer();
+    for (final match in matches) {
+      String chunk = match.group(1) ?? '';
+      try {
+        String unescaped = jsonDecode('"$chunk"');
+        sb.write(unescaped);
+      } catch (e) {
+        sb.write(chunk.replaceAll(r'\"', '"').replaceAll(r'\\', r'\'));
+      }
+    }
+    return sb.toString();
+  }
+
+  /// 栈匹配安全提取 JSON 对象 (规避了结尾的 React 控制字符)
+  dynamic _extractJsonBySearchKey(String fullData, String searchKey) {
+    int startIndex = fullData.indexOf(searchKey);
+    if (startIndex == -1) return null;
+
+    startIndex += searchKey.length;
+    // 跳过可能的空格，确保指针指在 { 或 [ 上
+    while (startIndex < fullData.length && fullData[startIndex].trim().isEmpty) {
+      startIndex++;
+    }
+
+    int braces = 0;
+    int brackets = 0;
+    int endIndex = startIndex;
+    bool inString = false;
+    bool escapeNext = false;
+
+    for (int i = startIndex; i < fullData.length; i++) {
+      String char = fullData[i];
+      if (escapeNext) {
+        escapeNext = false;
+        continue;
+      }
+      if (char == '\\') {
+        escapeNext = true;
+        continue;
+      }
+      if (char == '"') {
+        inString = !inString;
+        continue;
+      }
+      if (!inString) {
+        if (char == '{') braces++;
+        else if (char == '}') braces--;
+        else if (char == '[') brackets++;
+        else if (char == ']') brackets--;
+
+        // 当括号完美配对，证明解析到了完整 JSON 块的边界
+        if (braces == 0 && brackets == 0) {
+          endIndex = i + 1;
+          break;
+        }
+      }
+    }
+
+    String cleanJsonString = fullData.substring(startIndex, endIndex);
+    try {
+      return jsonDecode(cleanJsonString);
+    } catch (e) {
+      CoreLog.error("抖音 JSON 解析失败: $e");
+      return null;
+    }
+  }
+  // ====================== 核心解析辅助算法结束 ======================
+
+
   @override
   Future<List<LiveCategory>> getCategores() async {
     List<LiveCategory> categories = [];
@@ -73,48 +149,44 @@ class DouyinSite implements LiveSite {
       header: await getRequestHeaders(),
     );
 
-    var renderData =
-        RegExp(
-          r'\{\\"pathname\\":\\"\/\\",\\"categoryData.*?\]\\n',
-        ).firstMatch(result)?.group(0) ??
-        "";
-    var renderDataJson = json.decode(
-      renderData
-          .trim()
-          .replaceAll('\\"', '"')
-          .replaceAll(r"\\", r"\")
-          .replaceAll(']\\n', ""),
-    );
+    // ✨ 替换为更安全的栈提取算法
+    var fullData = _getCleanRscData(result);
+    var categoryDataList = _extractJsonBySearchKey(fullData, '"categoryData":');
 
-    for (var item in renderDataJson["categoryData"]) {
-      List<LiveSubCategory> subs = [];
-      var id = '${item["partition"]["id_str"]},${item["partition"]["type"]}';
-      for (var subItem in item["sub_partition"]) {
-        var subCategory = LiveSubCategory(
-          id: '${subItem["partition"]["id_str"]},${subItem["partition"]["type"]}',
-          name: asT<String?>(subItem["partition"]["title"]) ?? "",
-          parentId: id,
-          pic: "",
+    if (categoryDataList != null && categoryDataList is List) {
+      for (var item in categoryDataList) {
+        List<LiveSubCategory> subs = [];
+        var id = '${item["partition"]["id_str"]},${item["partition"]["type"]}';
+        for (var subItem in item["sub_partition"]) {
+          var subCategory = LiveSubCategory(
+            id: '${subItem["partition"]["id_str"]},${subItem["partition"]["type"]}',
+            name: asT<String?>(subItem["partition"]["title"]) ?? "",
+            parentId: id,
+            pic: "",
+          );
+          subs.add(subCategory);
+        }
+
+        var category = LiveCategory(
+          children: subs,
+          id: id,
+          name: asT<String?>(item["partition"]["title"]) ?? "",
         );
-        subs.add(subCategory);
+        subs.insert(
+          0,
+          LiveSubCategory(
+            id: category.id,
+            name: category.name,
+            parentId: category.id,
+            pic: "",
+          ),
+        );
+        categories.add(category);
       }
-
-      var category = LiveCategory(
-        children: subs,
-        id: id,
-        name: asT<String?>(item["partition"]["title"]) ?? "",
-      );
-      subs.insert(
-        0,
-        LiveSubCategory(
-          id: category.id,
-          name: category.name,
-          parentId: category.id,
-          pic: "",
-        ),
-      );
-      categories.add(category);
+    } else {
+      _logDebug("未找到 categoryData 或解析失败");
     }
+    
     return categories;
   }
 
@@ -262,8 +334,6 @@ class DouyinSite implements LiveSite {
     var webRid = roomData["data"]["room"]["owner"]["web_rid"].toString();
 
     // 读取用户唯一ID，用于弹幕连接
-    // 似乎这个参数不是必须的，先随机生成一个
-    //var userUniqueId = await _getUserUniqueId(webRid);
     var userUniqueId = generateRandomNumber(12).toString();
 
     var room = roomData["data"]["room"];
@@ -330,8 +400,6 @@ class DouyinSite implements LiveSite {
     var roomId = roomData["id_str"].toString();
 
     // 读取用户唯一ID，用于弹幕连接
-    // 似乎这个参数不是必须的，先随机生成一个
-    //var userUniqueId = await _getUserUniqueId(webRid);
     var userUniqueId = generateRandomNumber(12).toString();
 
     var owner = roomData["owner"];
@@ -461,18 +529,15 @@ class DouyinSite implements LiveSite {
       },
     );
 
-    var renderData =
-        RegExp(
-          r'\{\\"state\\":\{\\"appStore.*?\]\\n',
-        ).firstMatch(result)?.group(0) ??
-        "";
-    var str = renderData
-        .trim()
-        .replaceAll('\\"', '"')
-        .replaceAll(r"\\", r"\")
-        .replaceAll(']\\n', "");
-    var renderDataJson = json.decode(str);
-    return renderDataJson["state"];
+    // ✨ 替换为更安全的栈提取算法
+    var fullData = _getCleanRscData(result);
+    var initialState = _extractJsonBySearchKey(fullData, '"initialState":');
+    
+    if (initialState != null && initialState is Map) {
+      return initialState;
+    }
+    
+    throw Exception("获取直播间网页数据失败或解析错误");
   }
 
   /// 通过webRid获取直播间Web信息
@@ -621,7 +686,7 @@ class DouyinSite implements LiveSite {
       CoreLog.error(stackTrace);
     }
     // var qualityData = json.decode(
-    //     detail.data["live_core_sdk_data"]["pull_data"]["stream_data"])["data"];
+    //      detail.data["live_core_sdk_data"]["pull_data"]["stream_data"])["data"];
 
     qualities.sort((a, b) => b.sort.compareTo(a.sort));
     _logDebug("获取到的画质列表: ${qualities.map((q) => q.quality).toList()}");
