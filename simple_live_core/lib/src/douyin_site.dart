@@ -149,7 +149,7 @@ class DouyinSite implements LiveSite {
       header: await getRequestHeaders(),
     );
 
-    // ✨ 替换为更安全的栈提取算法
+    // ✨ 使用新的栈提取算法，安全获取 categoryData
     var fullData = _getCleanRscData(result);
     var categoryDataList = _extractJsonBySearchKey(fullData, '"categoryData":');
 
@@ -157,12 +157,20 @@ class DouyinSite implements LiveSite {
       for (var item in categoryDataList) {
         List<LiveSubCategory> subs = [];
         var id = '${item["partition"]["id_str"]},${item["partition"]["type"]}';
-        for (var subItem in item["sub_partition"]) {
+        
+        for (var subItem in item["sub_partition"] ?? []) {
+          // ✨ 修复分类图片解析
+          String picUrl = "";
+          var iconList = subItem["partition"]?["icon"]?["url_list"];
+          if (iconList != null && iconList is List && iconList.isNotEmpty) {
+            picUrl = iconList[0].toString();
+          }
+
           var subCategory = LiveSubCategory(
             id: '${subItem["partition"]["id_str"]},${subItem["partition"]["type"]}',
             name: asT<String?>(subItem["partition"]["title"]) ?? "",
             parentId: id,
-            pic: "",
+            pic: picUrl, // 应用修复后的图片URL
           );
           subs.add(subCategory);
         }
@@ -178,7 +186,7 @@ class DouyinSite implements LiveSite {
             id: category.id,
             name: category.name,
             parentId: category.id,
-            pic: "",
+            pic: "", // 主分类“全部”无图标
           ),
         );
         categories.add(category);
@@ -236,14 +244,21 @@ class DouyinSite implements LiveSite {
     var hasMore = (result["data"]["data"] as List).length >= 15;
     var items = <LiveRoomItem>[];
     for (var item in result["data"]["data"]) {
+      // ✨ 修复房间封面图片解析，防止越界崩溃
+      String coverUrl = "";
+      var coverList = item["room"]?["cover"]?["url_list"];
+      if (coverList != null && coverList is List && coverList.isNotEmpty) {
+        coverUrl = coverList[0].toString();
+      }
+
       var roomItem = LiveRoomItem(
-        roomId: item["web_rid"],
-        title: item["room"]["title"].toString(),
-        cover: item["room"]["cover"]["url_list"][0].toString(),
-        userName: item["room"]["owner"]["nickname"].toString(),
+        roomId: item["web_rid"]?.toString() ?? "",
+        title: item["room"]?["title"]?.toString() ?? "",
+        cover: coverUrl, // 应用修复后的图片URL
+        userName: item["room"]?["owner"]?["nickname"]?.toString() ?? "",
         online:
             int.tryParse(
-              item["room"]["room_view_stats"]["display_value"].toString(),
+              item["room"]?["room_view_stats"]?["display_value"]?.toString() ?? "0",
             ) ??
             0,
       );
@@ -291,14 +306,21 @@ class DouyinSite implements LiveSite {
     var hasMore = (result["data"]["data"] as List).length >= 15;
     var items = <LiveRoomItem>[];
     for (var item in result["data"]["data"]) {
+      // ✨ 修复房间封面图片解析，防止越界崩溃
+      String coverUrl = "";
+      var coverList = item["room"]?["cover"]?["url_list"];
+      if (coverList != null && coverList is List && coverList.isNotEmpty) {
+        coverUrl = coverList[0].toString();
+      }
+
       var roomItem = LiveRoomItem(
-        roomId: item["web_rid"],
-        title: item["room"]["title"].toString(),
-        cover: item["room"]["cover"]["url_list"][0].toString(),
-        userName: item["room"]["owner"]["nickname"].toString(),
+        roomId: item["web_rid"]?.toString() ?? "",
+        title: item["room"]?["title"]?.toString() ?? "",
+        cover: coverUrl, // 应用修复后的图片URL
+        userName: item["room"]?["owner"]?["nickname"]?.toString() ?? "",
         online:
             int.tryParse(
-              item["room"]["room_view_stats"]["display_value"].toString(),
+              item["room"]?["room_view_stats"]?["display_value"]?.toString() ?? "0",
             ) ??
             0,
       );
@@ -529,7 +551,7 @@ class DouyinSite implements LiveSite {
       },
     );
 
-    // ✨ 替换为更安全的栈提取算法
+    // ✨ 使用新的栈提取算法
     var fullData = _getCleanRscData(result);
     var initialState = _extractJsonBySearchKey(fullData, '"initialState":');
     
@@ -685,8 +707,6 @@ class DouyinSite implements LiveSite {
       CoreLog.error(e);
       CoreLog.error(stackTrace);
     }
-    // var qualityData = json.decode(
-    //      detail.data["live_core_sdk_data"]["pull_data"]["stream_data"])["data"];
 
     qualities.sort((a, b) => b.sort.compareTo(a.sort));
     _logDebug("获取到的画质列表: ${qualities.map((q) => q.quality).toList()}");
@@ -747,7 +767,7 @@ class DouyinSite implements LiveSite {
         "webid": "7382872326016435738",
       },
     );
-    //var requlestUrl = await getAbogusUrl(uri.toString());
+    
     var requlestUrl = uri.toString();
     var headResp = await HttpClient.instance.head(
       'https://live.douyin.com',
@@ -794,7 +814,10 @@ class DouyinSite implements LiveSite {
       var roomItem = LiveRoomItem(
         roomId: itemData["owner"]["web_rid"].toString(),
         title: itemData["title"].toString(),
-        cover: itemData["cover"]["url_list"][0].toString(),
+        // ✨ 这里也可以增加一道安全防线
+        cover: (itemData["cover"]?["url_list"] as List?)?.isNotEmpty == true 
+            ? itemData["cover"]["url_list"][0].toString() 
+            : "",
         userName: itemData["owner"]["nickname"].toString(),
         online: int.tryParse(itemData["stats"]["total_user"].toString()) ?? 0,
       );
