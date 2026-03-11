@@ -52,7 +52,7 @@ class DouyinSite implements LiveSite {
         return headers;
       }
 
-      // 使用默认的 ttwid cookie（只需要 ttwid 即可获取所有画质）
+      // 使用默认的 ttwid cookie
       headers["cookie"] = kDefaultCookie;
       return headers;
     } catch (e) {
@@ -170,7 +170,7 @@ class DouyinSite implements LiveSite {
             id: '${subItem["partition"]["id_str"]},${subItem["partition"]["type"]}',
             name: asT<String?>(subItem["partition"]["title"]) ?? "",
             parentId: id,
-            pic: picUrl, // 应用修复后的图片URL
+            pic: picUrl, 
           );
           subs.add(subCategory);
         }
@@ -254,7 +254,7 @@ class DouyinSite implements LiveSite {
       var roomItem = LiveRoomItem(
         roomId: item["web_rid"]?.toString() ?? "",
         title: item["room"]?["title"]?.toString() ?? "",
-        cover: coverUrl, // 应用修复后的图片URL
+        cover: coverUrl, 
         userName: item["room"]?["owner"]?["nickname"]?.toString() ?? "",
         online:
             int.tryParse(
@@ -316,7 +316,7 @@ class DouyinSite implements LiveSite {
       var roomItem = LiveRoomItem(
         roomId: item["web_rid"]?.toString() ?? "",
         title: item["room"]?["title"]?.toString() ?? "",
-        cover: coverUrl, // 应用修复后的图片URL
+        cover: coverUrl, 
         userName: item["room"]?["owner"]?["nickname"]?.toString() ?? "",
         online:
             int.tryParse(
@@ -331,11 +331,6 @@ class DouyinSite implements LiveSite {
 
   @override
   Future<LiveRoomDetail> getRoomDetail({required String roomId}) async {
-    // 有两种roomId，一种是webRid，一种是roomId
-    // roomId是一次性的，用户每次重新开播都会生成一个新的roomId
-    // roomId一般长度为19位，例如：7376429659866598196
-    // webRid是固定的，用户每次开播都是同一个webRid
-    // webRid一般长度为11-12位，例如：416144012050
     // 这里简单进行判断，如果roomId长度小于15，则认为是webRid
     if (roomId.length <= 16) {
       var webRid = roomId;
@@ -346,16 +341,9 @@ class DouyinSite implements LiveSite {
   }
 
   /// 通过roomId获取直播间信息
-  /// - [roomId] 直播间ID
-  /// - 返回直播间信息
   Future<LiveRoomDetail> getRoomDetailByRoomId(String roomId) async {
-    // 读取房间信息
     var roomData = await _getRoomDataByRoomId(roomId);
-
-    // 通过房间信息获取WebRid
     var webRid = roomData["data"]["room"]["owner"]["web_rid"].toString();
-
-    // 读取用户唯一ID，用于弹幕连接
     var userUniqueId = generateRandomNumber(12).toString();
 
     var room = roomData["data"]["room"];
@@ -363,15 +351,12 @@ class DouyinSite implements LiveSite {
 
     var status = asT<int?>(room["status"]) ?? 0;
 
-    // roomId是一次性的，用户每次重新开播都会生成一个新的roomId
-    // 所以如果roomId对应的直播间状态不是直播中，就通过webRid获取直播间信息
     if (status == 4) {
       var result = await getRoomDetailByWebRid(webRid);
       return result;
     }
 
     var roomStatus = status == 2;
-    // 主要是为了获取cookie,用于弹幕websocket连接
     var headers = await getRequestHeaders();
 
     return LiveRoomDetail(
@@ -398,8 +383,6 @@ class DouyinSite implements LiveSite {
   }
 
   /// 通过WebRid获取直播间信息
-  /// - [webRid] 直播间RID
-  /// - 返回直播间信息
   Future<LiveRoomDetail> getRoomDetailByWebRid(String webRid) async {
     try {
       var result = await _getRoomDetailByWebRidApi(webRid);
@@ -410,25 +393,16 @@ class DouyinSite implements LiveSite {
     return await _getRoomDetailByWebRidHtml(webRid);
   }
 
-  /// 通过WebRid访问直播间API，从API中获取直播间信息
-  /// - [webRid] 直播间RID
-  /// - 返回直播间信息
   Future<LiveRoomDetail> _getRoomDetailByWebRidApi(String webRid) async {
-    // 读取房间信息
     var data = await _getRoomDataByApi(webRid);
 
     var roomData = data["data"][0];
     var userData = data["user"];
     var roomId = roomData["id_str"].toString();
-
-    // 读取用户唯一ID，用于弹幕连接
     var userUniqueId = generateRandomNumber(12).toString();
-
     var owner = roomData["owner"];
-
     var roomStatus = (asT<int?>(roomData["status"]) ?? 0) == 2;
 
-    // 主要是为了获取cookie,用于弹幕websocket连接
     var headers = await getRequestHeaders();
     return LiveRoomDetail(
       roomId: webRid,
@@ -457,9 +431,6 @@ class DouyinSite implements LiveSite {
     );
   }
 
-  /// 通过WebRid访问直播间网页，从网页HTML中获取直播间信息
-  /// - [webRid] 直播间RID
-  /// - 返回直播间信息
   Future<LiveRoomDetail> _getRoomDetailByWebRidHtml(String webRid) async {
     var roomData = await _getRoomDataByHtml(webRid);
     var roomId = roomData["roomStore"]["roomInfo"]["room"]["id_str"].toString();
@@ -471,7 +442,6 @@ class DouyinSite implements LiveSite {
     var anchor = roomData["roomStore"]["roomInfo"]["anchor"];
     var roomStatus = (asT<int?>(room["status"]) ?? 0) == 2;
 
-    // 主要是为了获取cookie,用于弹幕websocket连接
     var headers = await getRequestHeaders();
 
     return LiveRoomDetail(
@@ -501,9 +471,6 @@ class DouyinSite implements LiveSite {
     );
   }
 
-  /// 读取用户的唯一ID
-  /// - [webRid] 直播间RID
-  // ignore: unused_element
   Future<String> _getUserUniqueId(String webRid) async {
     try {
       var webInfo = await _getRoomDataByHtml(webRid);
@@ -513,8 +480,6 @@ class DouyinSite implements LiveSite {
     }
   }
 
-  /// 进入直播间前需要先获取cookie
-  /// - [webRid] 直播间RID
   Future<String> _getWebCookie(String webRid) async {
     var headResp = await HttpClient.instance.head(
       "https://live.douyin.com/$webRid",
@@ -523,21 +488,13 @@ class DouyinSite implements LiveSite {
     var dyCookie = "";
     headResp.headers["set-cookie"]?.forEach((element) {
       var cookie = element.split(";")[0];
-      if (cookie.contains("ttwid")) {
-        dyCookie += "$cookie;";
-      }
-      if (cookie.contains("__ac_nonce")) {
-        dyCookie += "$cookie;";
-      }
-      if (cookie.contains("msToken")) {
+      if (cookie.contains("ttwid") || cookie.contains("__ac_nonce") || cookie.contains("msToken")) {
         dyCookie += "$cookie;";
       }
     });
     return dyCookie;
   }
 
-  /// 通过webRid获取直播间Web信息
-  /// - [webRid] 直播间RID
   Future<Map> _getRoomDataByHtml(String webRid) async {
     var dyCookie = await _getWebCookie(webRid);
     var result = await HttpClient.instance.getText(
@@ -562,15 +519,9 @@ class DouyinSite implements LiveSite {
     throw Exception("获取直播间网页数据失败或解析错误");
   }
 
-  /// 通过webRid获取直播间Web信息
-  /// - [webRid] 直播间RID
   Future<Map> _getRoomDataByApi(String webRid) async {
     String serverUrl = "https://live.douyin.com/webcast/room/web/enter/";
-
-    // 提前获取 headers
     var requestHeader = await getRequestHeaders();
-
-    // 使用动态 Referer（包含房间号，参考 DouyinLiveRecorder）
     requestHeader["Referer"] = "https://live.douyin.com/$webRid";
 
     var uri = Uri.parse(serverUrl).replace(
@@ -604,8 +555,6 @@ class DouyinSite implements LiveSite {
     return result["data"];
   }
 
-  /// 通过roomId获取直播间信息
-  /// - [roomId] 直播间ID
   Future<Map> _getRoomDataByRoomId(String roomId) async {
     var result = await HttpClient.instance.getJson(
       'https://webcast.amemv.com/webcast/room/reflow/info/',
@@ -630,77 +579,49 @@ class DouyinSite implements LiveSite {
 
     try {
       var liveCoreData = detail.data["live_core_sdk_data"];
-
-      if (liveCoreData == null) {
-        return qualities;
-      }
+      if (liveCoreData == null) return qualities;
 
       var pullData = liveCoreData["pull_data"];
-
-      if (pullData == null) {
-        return qualities;
-      }
+      if (pullData == null) return qualities;
 
       var options = pullData["options"];
-
       var qulityList = options?["qualities"];
-
       var streamData = pullData["stream_data"]?.toString() ?? "";
 
       if (!streamData.startsWith('{')) {
-        var flvList = (detail.data["flv_pull_url"] as Map).values
-            .cast<String>()
-            .toList();
-        var hlsList = (detail.data["hls_pull_url_map"] as Map).values
-            .cast<String>()
-            .toList();
+        var flvList = (detail.data["flv_pull_url"] as Map).values.cast<String>().toList();
+        var hlsList = (detail.data["hls_pull_url_map"] as Map).values.cast<String>().toList();
         for (var quality in qulityList) {
           int level = quality["level"];
           List<String> urls = [];
           var flvIndex = flvList.length - level;
-          if (flvIndex >= 0 && flvIndex < flvList.length) {
-            urls.add(flvList[flvIndex]);
-          }
+          if (flvIndex >= 0 && flvIndex < flvList.length) urls.add(flvList[flvIndex]);
           var hlsIndex = hlsList.length - level;
-          if (hlsIndex >= 0 && hlsIndex < hlsList.length) {
-            urls.add(hlsList[hlsIndex]);
-          }
+          if (hlsIndex >= 0 && hlsIndex < hlsList.length) urls.add(hlsList[hlsIndex]);
+          
           var qualityItem = LivePlayQuality(
             quality: quality["name"],
             sort: level,
             data: urls,
           );
-          if (urls.isNotEmpty) {
-            qualities.add(qualityItem);
-          }
+          if (urls.isNotEmpty) qualities.add(qualityItem);
         }
       } else {
         var qualityData = json.decode(streamData)["data"] as Map;
-
         for (var quality in qulityList) {
           List<String> urls = [];
-
-          var flvUrl = qualityData[quality["sdk_key"]]?["main"]?["flv"]
-              ?.toString();
-
-          if (flvUrl != null && flvUrl.isNotEmpty) {
-            urls.add(flvUrl);
-          }
-          var hlsUrl = qualityData[quality["sdk_key"]]?["main"]?["hls"]
-              ?.toString();
-
-          if (hlsUrl != null && hlsUrl.isNotEmpty) {
-            urls.add(hlsUrl);
-          }
+          var flvUrl = qualityData[quality["sdk_key"]]?["main"]?["flv"]?.toString();
+          if (flvUrl != null && flvUrl.isNotEmpty) urls.add(flvUrl);
+          
+          var hlsUrl = qualityData[quality["sdk_key"]]?["main"]?["hls"]?.toString();
+          if (hlsUrl != null && hlsUrl.isNotEmpty) urls.add(hlsUrl);
 
           var qualityItem = LivePlayQuality(
             quality: quality["name"],
             sort: quality["level"],
             data: urls,
           );
-          if (urls.isNotEmpty) {
-            qualities.add(qualityItem);
-          }
+          if (urls.isNotEmpty) qualities.add(qualityItem);
         }
       }
     } catch (e, stackTrace) {
@@ -718,7 +639,6 @@ class DouyinSite implements LiveSite {
     required LiveRoomDetail detail,
     required LivePlayQuality quality,
   }) async {
-    // 返回列表的副本，防止外部 clear() 影响原始数据
     return LivePlayUrl(urls: List<String>.from(quality.data));
   }
 
@@ -776,10 +696,7 @@ class DouyinSite implements LiveSite {
     var dyCookie = "";
     headResp.headers["set-cookie"]?.forEach((element) {
       var cookie = element.split(";")[0];
-      if (cookie.contains("ttwid")) {
-        dyCookie += "$cookie;";
-      }
-      if (cookie.contains("__ac_nonce")) {
+      if (cookie.contains("ttwid") || cookie.contains("__ac_nonce")) {
         dyCookie += "$cookie;";
       }
     });
@@ -793,10 +710,8 @@ class DouyinSite implements LiveSite {
         'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
         'cookie': dyCookie,
         'priority': 'u=1, i',
-        'referer':
-            'https://www.douyin.com/search/${Uri.encodeComponent(keyword)}?type=live',
-        'sec-ch-ua':
-            '"Microsoft Edge";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
+        'referer': 'https://www.douyin.com/search/${Uri.encodeComponent(keyword)}?type=live',
+        'sec-ch-ua': '"Microsoft Edge";v="125", "Chromium";v="125", "Not.A/Brand";v="24"',
         'sec-ch-ua-mobile': '?0',
         'sec-ch-ua-platform': '"Windows"',
         'sec-fetch-dest': 'empty',
@@ -811,13 +726,18 @@ class DouyinSite implements LiveSite {
     var items = <LiveRoomItem>[];
     for (var item in result["data"] ?? []) {
       var itemData = json.decode(item["lives"]["rawdata"].toString());
+      
+      // ✨ 增加封面获取安全防御
+      String coverUrl = "";
+      var coverList = itemData["cover"]?["url_list"];
+      if (coverList != null && coverList is List && coverList.isNotEmpty) {
+        coverUrl = coverList[0].toString();
+      }
+
       var roomItem = LiveRoomItem(
         roomId: itemData["owner"]["web_rid"].toString(),
         title: itemData["title"].toString(),
-        // ✨ 这里也可以增加一道安全防线
-        cover: (itemData["cover"]?["url_list"] as List?)?.isNotEmpty == true 
-            ? itemData["cover"]["url_list"][0].toString() 
-            : "",
+        cover: coverUrl,
         userName: itemData["owner"]["nickname"].toString(),
         online: int.tryParse(itemData["stats"]["total_user"].toString()) ?? 0,
       );
