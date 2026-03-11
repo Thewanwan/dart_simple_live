@@ -696,7 +696,10 @@ class DouyinSite implements LiveSite {
     var dyCookie = "";
     headResp.headers["set-cookie"]?.forEach((element) {
       var cookie = element.split(";")[0];
-      if (cookie.contains("ttwid") || cookie.contains("__ac_nonce")) {
+      if (cookie.contains("ttwid")) {
+        dyCookie += "$cookie;";
+      }
+      if (cookie.contains("__ac_nonce")) {
         dyCookie += "$cookie;";
       }
     });
