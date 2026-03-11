@@ -61,9 +61,13 @@ class HuyaSite implements LiveSite {
     var result = json.decode(resultText);
     var items = <LiveRoomItem>[];
     for (var item in result["data"]["datas"]) {
-      // 封面处理：添加参数
-      var cover = item["screenshot"].toString();
-      if (!cover.contains("?")) {
+      
+      // ✨ 封面处理：增加协议头补全防白屏
+      var cover = item["screenshot"]?.toString() ?? "";
+      if (cover.startsWith("//")) {
+        cover = "https:$cover";
+      }
+      if (cover.isNotEmpty && !cover.contains("?")) {
         cover += "?x-oss-process=style/w338_h190&";
       }
       
@@ -136,13 +140,25 @@ class HuyaSite implements LiveSite {
       }
     }
 
+    // ✨ 封面处理：增加协议头补全
+    String cover = tLiveInfo["sScreenshot"]?.toString() ?? "";
+    if (cover.startsWith("//")) {
+      cover = "https:$cover";
+    }
+    
+    // ✨ 头像处理：增加协议头补全
+    String avatar = tProfileInfo?["sAvatar180"]?.toString() ?? "";
+    if (avatar.startsWith("//")) {
+      avatar = "https:$avatar";
+    }
+
     return LiveRoomDetail(
-      cover: tLiveInfo["sScreenshot"]?.toString() ?? "",
+      cover: cover,
       online: tLiveInfo["lTotalCount"] ?? 0,
       roomId: tLiveInfo["lProfileRoom"]?.toString() ?? realRoomId,
       title: tLiveInfo["sIntroduction"]?.toString() ?? tLiveInfo["sRoomName"]?.toString() ?? "",
       userName: tProfileInfo?["sNick"]?.toString() ?? "虎牙主播",
-      userAvatar: tProfileInfo?["sAvatar180"]?.toString() ?? "",
+      userAvatar: avatar,
       introduction: tLiveInfo["sIntroduction"]?.toString() ?? "",
       status: rootData["eLiveStatus"] == 2,
       data: HuyaUrlDataModel(url: "", lines: huyaLines, bitRates: [], uid: getUid()),
@@ -203,7 +219,7 @@ class HuyaSite implements LiveSite {
                     item["cover"]?.toString() ?? "";
         }
         
-        // 修复协议前缀
+        // ✨ 修复协议前缀
         if (coverUrl.startsWith("//")) {
           coverUrl = "https:$coverUrl";
         }
